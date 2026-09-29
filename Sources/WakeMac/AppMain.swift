@@ -236,9 +236,12 @@ extension WorkMode {
             if UserDefaults.standard.bool(forKey: "HasConfiguredMode") { await model.choose(.normal) }
             else { await model.refresh() }
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+        timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.model.refresh() }
         }
+        // Renew the helper lease even while a window is being dragged or a
+        // native control menu is tracking. A genuinely hung process still expires.
+        if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

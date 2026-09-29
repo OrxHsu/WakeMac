@@ -2,32 +2,39 @@
 
 <img src="Assets/AppIcon.png" width="128" alt="WakeMac icon">
 
-原生 macOS 菜单栏应用，协调 Amphetamine、Power Protect 与系统锁屏策略。采用 SwiftUI / AppKit 构建，macOS 26+ 使用原生 Liquid Glass。界面目前为简体中文。
+原生 macOS 菜单栏应用，管理保活、合盖运行与自动收尾。无需安装 Amphetamine 或 Power Protect。采用 SwiftUI / AppKit 构建，macOS 26+ 使用原生 Liquid Glass。界面目前为简体中文。
 
 ## 使用
 
 点菜单栏图标选择模式，或在 Applications 双击 WakeMac 打开状态面板。
 
-- **后台工作**：手动无限时长会话、允许屏幕熄灭、开启合盖运行和 Power Protect。屏幕按系统当前闲置时间关闭。用于通风桌面，不要在包中持续高负载运行。
-- **桌面工作**：手动无限时长会话、允许熄屏、关闭全局禁止休眠与合盖运行。上盖打开时保持运行；熄屏后正常锁定；使用 Computer Use 前需要本人解锁。不会模拟鼠标移动，也不会自动解锁。
-- **正常休眠**：停止 Amphetamine 自动触发与会话、关闭合盖运行与 Power Protect、要求立即唤醒认证。恢复合盖休眠；不终止其他应用。其他应用仍可能阻止闲置睡眠。
+- **后台工作**：原生保活会话、允许屏幕熄灭，通过自带的合盖服务开启全局防休眠。屏幕按系统当前闲置时间关闭。用于通风桌面，不要在包中持续高负载运行。
+- **桌面工作**：原生 IOKit 保活、允许熄屏，不开启全局防休眠。上盖打开时保持运行；熄屏后正常锁定；使用 Computer Use 前需要本人解锁。不会模拟鼠标移动，也不会自动解锁。
+- **正常休眠**：释放 WakeMac 的保活断言和合盖会话、核验立即唤醒认证。恢复合盖休眠；不终止其他应用。其他应用仍可能阻止闲置睡眠。
 - **立即锁定并休眠**：先核验正常模式，再向 macOS 发出休眠请求。如果锁屏设置未完成，只提示设置，不在稍后突然自动休眠；完成设置后再点一次。
 
 ## 认证与权限
 
-应用使用 Amphetamine 的正式 Apple-event 脚本接口，首次使用可能弹出自动化授权。不会申请辅助功能或屏幕录制权限，不读取或保存 Mac 密码。
+桌面工作通过 IOKit 电源断言实现，无需管理员或自动化授权。WakeMac 不申请辅助功能或屏幕录制权限，不读取或保存 Mac 密码。
 
 三个模式始终保留“熄屏后立即要求密码”，切换模式不要求改成 Never。只有检测到当前锁屏保护已关闭或延迟时，应用才会提示恢复“立即”，并由用户在系统设置中完成必要认证。应用只切换休眠与合盖行为，不关闭锁屏密码，不自动解锁。
 
-仅复用已安装 Power Protect 的两条免密授权：`pmset -a disablesleep 0/1`。不安装额外 root helper、不扩大 sudoers 权限，不编辑受保护的系统偏好文件。退出前恢复正常模式；已经使用过应用后，重新启动默认恢复正常模式。强退后到重新启动之前，已存在的 Power Protect 设置仍可能继续生效。
+合盖运行使用应用内置的签名辅助服务，通过 Apple 的 `SMAppService` 登记，由用户在系统设置中批准。服务仅提供开启/关闭合盖会话与续期接口，内部执行固定的 `pmset -a disablesleep 0/1`，不接受命令、路径或任意参数，不修改 sudoers。XPC 通信要求同一 Apple 开发者签名及指定程序标识。
+
+退出前恢复正常模式；重启不重放旧命令或定时。主程序退出或断线后服务释放合盖会话；没有心跳时 30 秒到期，监测每 3 秒执行一次。服务崩溃后由 launchd 重启，使用 root 所有的记录恢复它自己开启的防休眠；恢复失败会重试。IOKit 保活断言由系统随主程序退出释放。
 
 ## 环境要求
 
 运行需要 macOS 14+；构建需要 Xcode 26+（macOS 26 SDK）和 Swift 6 工具链。Swift Package 无第三方库依赖。
 
-## 安装依赖
+## 启用合盖运行
 
-先安装 [Amphetamine](https://apps.apple.com/app/amphetamine/id937984704)，并使用其官方 Power Protect 工具完成配置。WakeMac 复用 Power Protect 已安装的 `pmset -a disablesleep 0/1` 权限；不会替你安装或修改系统授权。
+1. 将签名的 `WakeMac.app` 放进 Applications 并打开。
+2. 在「偏好设置 → 合盖运行」点击「启用合盖服务…」。
+3. 在系统设置的「通用 → 登录项与扩展」批准 WakeMac 的后台服务。系统可能要求管理员认证。
+4. 返回 WakeMac 选择「后台工作」。
+
+桌面工作、日期选择、命令任务和运行记录不需要这项授权。移除服务前，应用会先恢复正常休眠。若从旧版升级，请先在旧版或其他保活应用中恢复休眠；WakeMac 不接管或修改其他程序的保活会话。
 
 ## 从源码构建
 
@@ -41,9 +48,11 @@ swift test --scratch-path /tmp/wakemac-build
 scripts/build-app.sh
 ```
 
-构建产物默认为 `/tmp/wakemac-dist/WakeMac.app`，复制到 Applications 后打开；再次打开应用可显示状态面板。默认使用 ad hoc 签名，仅供本机构建。自动化权限或登录启动如需稳定的签名身份，可通过 `WAKEMAC_SIGN_IDENTITY` 指定自己的 Apple 开发证书。`WAKEMAC_BUILD_DIR` 与 `WAKEMAC_OUTPUT_DIR` 可覆盖构建和输出路径。当前未提供公证安装包。
+构建产物默认为 `/tmp/wakemac-dist/WakeMac.app`，复制到 Applications 后打开；再次打开应用可显示状态面板。默认使用 ad hoc 签名，仅供本机构建。合盖服务需要主程序和辅助程序使用同一 Apple 开发者证书签名（Apple Development 或 Developer ID）；可通过 `WAKEMAC_SIGN_IDENTITY` 指定自己的证书。未签名或 ad hoc 构建仅可使用无需合盖服务的功能。`WAKEMAC_BUILD_DIR` 与 `WAKEMAC_OUTPUT_DIR` 可覆盖构建和输出路径。当前未提供公证安装包。
 
-自动测试覆盖状态协调、失败处理、命令生命周期和日期选择逻辑；不替代真实合盖、屏幕唤醒和密码解锁验证。
+自动测试覆盖状态协调、失败处理、命令生命周期、日期选择、辅助服务租约与原生保活断言，并含不需要管理员权限的桌面/正常模式运行检查。本机已验证签名服务登记与系统批准、后台/正常切换、客户端断线恢复，以及暂停客户端后 30–33 秒的超时恢复（包括释放主程序原生保活）。本机真实合盖连续采样超过 2 分钟，期间系统防休眠保持开启，采样持续执行。辅助服务自身崩溃重启仍未做实机测试；不同 macOS 版本和机型仍需分别验证。
+
+合盖运行使用系统的 `SleepDisabled` 开关，`disablesleep` 不是 Apple 文档保证长期兼容的公开参数；每次切换都读取系统状态核验，失败不会显示为已启用。
 
 ## 自动收尾与快捷操作
 
@@ -66,4 +75,4 @@ WakeMac 原名 WorkModes。内部 bundle ID 和数据目录保留旧标识，确
 
 ## License
 
-[MIT](LICENSE)。Amphetamine 与 Power Protect 是独立软件，不随本项目分发。
+[MIT](LICENSE)。

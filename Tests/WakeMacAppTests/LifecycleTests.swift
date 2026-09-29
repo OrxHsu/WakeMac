@@ -3,7 +3,7 @@ import XCTest
 import WakeMacCore
 
 actor DelayedBackend: ModeBackend {
-    var value = Snapshot(sleepDisabled: true, lockPolicy: .immediate, sessionActive: true, triggersEnabled: false, displaySleepAllowed: true, closedDisplayEnabled: true, sessionIsTrigger: false, sessionTimeRemaining: 0)
+    var value = Snapshot(sleepDisabled: true, lockPolicy: .immediate, idleSleepPrevented: true, displaySleepAllowed: true, backgroundLeaseActive: true)
     var holdSnapshot = false
     var holdPower = false
     var readGate: CheckedContinuation<Void, Never>?
@@ -18,8 +18,8 @@ actor DelayedBackend: ModeBackend {
     func configurePower(_ mode: WorkMode) async {
         operations.append(mode.rawValue)
         if holdPower { holdPower = false; await withCheckedContinuation { powerGate = $0 } }
-        value.sessionActive = mode != .normal; value.triggersEnabled = false
-        value.sleepDisabled = mode == .background; value.closedDisplayEnabled = mode == .background
+        value.idleSleepPrevented = mode != .normal
+        value.sleepDisabled = mode == .background; value.backgroundLeaseActive = mode == .background
     }
     func requestLockPolicy(_ policy: LockPolicy) {}
     func sleepNow() {}

@@ -2,44 +2,56 @@ import AppKit
 import CoreGraphics
 import IOKit
 import WakeMacCore
+import WakeMacPower
 
 actor MacBackend: ModeBackend {
     private func command(_ path: String, _ args: [String], timeout: TimeInterval = 20) async throws -> String {
         try await Task.detached(priority: .userInitiated) { try CommandRunner.run(path, args, timeout: timeout) }.value
     }
-    private func amp(_ body: String) async throws -> String {
-        guard FileManager.default.fileExists(atPath: "/Applications/Amphetamine.app") else { throw ModeError("请先安装 Amphetamine。") }
-        // This is the app's documented scripting API, never System Events UI scripting.
-        let script = "with timeout of 12 seconds\ntell application \"/Applications/Amphetamine.app\"\n" + body + "\nend tell\nend timeout"
-        do { return try await command("/usr/bin/osascript", ["-e", script], timeout: 30) }
-        catch { throw ModeError("无法控制 Amphetamine。请检查系统设置 → 隐私与安全性 → 自动化，允许 WakeMac控制 Amphetamine。\n" + error.localizedDescription) }
-    }
+    private let assertion = NativeSleepAssertion()
+    private let helper = PowerHelperClient()
+    private var backgroundRequested = false
     func snapshot() async throws -> Snapshot {
+        if backgroundRequested {
+            do { try await helper.renew() }
+            catch {
+                // If the helper expires or disconnects, do not leave an
+                // invisible desktop inhibitor behind in the main process.
+                backgroundRequested = false
+                let reason = error.localizedDescription
+                do { try assertion.release() }
+                catch { throw ModeError("合盖会话已失效；释放原生保活也失败：" + error.localizedDescription) }
+                throw ModeError("合盖会话已失效，已释放本应用的保活。\n" + reason)
+            }
+        }
         let power = try await command("/usr/bin/pmset", ["-g"])
         let policy = try await command("/usr/sbin/sysadminctl", ["-screenLock", "status"])
-        let raw = try await amp("return {(session is active), (Triggers are enabled), (display sleep allowed), (closed display mode enabled), (session is Trigger), (session time remaining)}")
-        let duration = try SystemParsing.sessionDuration(raw)
-        let booleans = raw.components(separatedBy: ",").prefix(5).joined(separator: ",")
-        let fields = try SystemParsing.amphetamine(booleans)
-        return Snapshot(sleepDisabled: SystemParsing.sleepDisabled(power), lockPolicy: SystemParsing.lockPolicy(policy), sessionActive: fields[0], triggersEnabled: fields[1], displaySleepAllowed: fields[2], closedDisplayEnabled: fields[3], sessionIsTrigger: fields[4], sessionTimeRemaining: duration)
+        return Snapshot(sleepDisabled: SystemParsing.sleepDisabled(power), lockPolicy: SystemParsing.lockPolicy(policy),
+                        idleSleepPrevented: assertion.active, displaySleepAllowed: true, backgroundLeaseActive: backgroundRequested)
     }
     func configurePower(_ mode: WorkMode) async throws {
-        var failures: [String] = []
-        let body: String
-        switch mode {
-        case .normal:
-            body = "disable Triggers\nend session\ndisable closed display mode"
-        case .background, .desk:
-            body = "disable Triggers\nend session\nstart new session with options {duration:0, interval:0, displaySleepAllowed:true}\nallow display sleep\nprevent screen saver\n" + (mode == .background ? "enable closed display mode" : "disable closed display mode")
+        if mode != .background {
+            try assertion.release()
+            if backgroundRequested {
+                do { try await helper.setBackground(false) }
+                catch {
+                    // An unapproved/unavailable helper cannot leave us in an
+                    // error state when system readback already confirms sleep.
+                    let power = try await command("/usr/bin/pmset", ["-g"])
+                    guard SystemParsing.sleepDisabled(power) == false else { throw error }
+                }
+                backgroundRequested = false
+            }
         }
-        do { _ = try await amp(body) } catch { failures.append(error.localizedDescription) }
-        // Reuse only the two narrow permissions already installed by official Power Protect.
-        // Clear global prevention even if an Apple event failed on a recovery path.
-        if failures.isEmpty || mode == .normal {
-            do { _ = try await command("/usr/bin/sudo", ["-n", "/usr/bin/pmset", "-a", "disablesleep", mode == .background ? "1" : "0"]) }
-            catch { failures.append("Power Protect 权限不可用：" + error.localizedDescription) }
+        if mode == .background {
+            backgroundRequested = true
+            try await helper.setBackground(true)
         }
-        if !failures.isEmpty { throw ModeError(failures.joined(separator: "\n")) }
+        let power = try await command("/usr/bin/pmset", ["-g"])
+        guard SystemParsing.sleepDisabled(power) == (mode == .background) else {
+            throw ModeError("系统防休眠状态不一致。请先在其他保活程序中恢复休眠，再重新选择模式。")
+        }
+        if mode != .normal { try assertion.acquire() }
     }
     func requestLockPolicy(_ policy: LockPolicy) async {
         await MainActor.run {

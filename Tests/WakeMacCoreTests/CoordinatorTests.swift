@@ -3,7 +3,7 @@ import XCTest
 
 // Effects are injected at the macOS boundary; the coordinator under test is production code.
 actor RecordingBackend: ModeBackend {
-    var value = Snapshot(sleepDisabled: false, lockPolicy: .immediate, sessionActive: false, triggersEnabled: true, displaySleepAllowed: true, closedDisplayEnabled: false, sessionIsTrigger: false, sessionTimeRemaining: 0)
+    var value = Snapshot(sleepDisabled: false, lockPolicy: .immediate, idleSleepPrevented: false, displaySleepAllowed: true, backgroundLeaseActive: false)
     var operations: [String] = []
     var requestedPolicies: [LockPolicy] = []
     var failPower = false
@@ -13,10 +13,9 @@ actor RecordingBackend: ModeBackend {
     func configurePower(_ mode: WorkMode) throws {
         operations.append("power:" + mode.rawValue)
         if failPower && mode != .normal { throw NSError(domain: "hardware", code: 1) }
-        value.triggersEnabled = false
-        value.sessionActive = mode != .normal
+        value.idleSleepPrevented = mode != .normal
         value.displaySleepAllowed = true
-        value.closedDisplayEnabled = mode == .background
+        value.backgroundLeaseActive = mode == .background
         value.sleepDisabled = mode == .background && !omitSleepDisable
     }
     func requestLockPolicy(_ policy: LockPolicy) { operations.append("policy"); requestedPolicies.append(policy) }
@@ -44,10 +43,10 @@ final class CoordinatorTests: XCTestCase {
         }
     }
 
-    func testBackgroundRequiresVerifiedPowerProtect() async {
+    func testBackgroundRequiresVerifiedGlobalSleepSwitch() async {
         let b = RecordingBackend(); await b.setup(omit: true)
         let r = await ModeCoordinator(backend: b).select(.background)
-        guard case .failed = r else { return XCTFail("Must reject missing Power Protect") }
+        guard case .failed = r else { return XCTFail("Must reject an unverified sleep switch") }
         let ops = await b.operations
         XCTAssertEqual(ops, ["power:background", "power:normal"])
     }
@@ -74,7 +73,7 @@ final class CoordinatorTests: XCTestCase {
         let r = await c.select(.normal)
         XCTAssertEqual(r, .needsLockPolicy(.normal))
         let ops = await b.operations; XCTAssertEqual(ops, ["power:background", "power:normal", "policy"])
-        let s = await b.snapshot(); XCTAssertEqual(s.triggersEnabled, false)
+        let s = await b.snapshot(); XCTAssertEqual(s.idleSleepPrevented, false)
         XCTAssertEqual(s.sleepDisabled, false)
     }
     func testSleepIsNotIssuedWhilePasswordRequirementIsOff() async {

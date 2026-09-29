@@ -5,28 +5,23 @@ public enum LockPolicy: Equatable, Sendable { case off, immediate, delayed, unkn
 public struct Snapshot: Equatable, Sendable {
     public var sleepDisabled: Bool?
     public var lockPolicy: LockPolicy
-    public var sessionActive: Bool?
-    public var triggersEnabled: Bool?
+    public var idleSleepPrevented: Bool?
     public var displaySleepAllowed: Bool?
-    public var closedDisplayEnabled: Bool?
-    public var sessionIsTrigger: Bool?
-    public var sessionTimeRemaining: Int?
-    public init(sleepDisabled: Bool?, lockPolicy: LockPolicy, sessionActive: Bool?, triggersEnabled: Bool?, displaySleepAllowed: Bool?, closedDisplayEnabled: Bool?, sessionIsTrigger: Bool? = nil, sessionTimeRemaining: Int? = nil) {
+    public var backgroundLeaseActive: Bool?
+    public init(sleepDisabled: Bool?, lockPolicy: LockPolicy, idleSleepPrevented: Bool?, displaySleepAllowed: Bool?, backgroundLeaseActive: Bool?) {
         self.sleepDisabled = sleepDisabled; self.lockPolicy = lockPolicy
-        self.sessionActive = sessionActive; self.triggersEnabled = triggersEnabled
-        self.displaySleepAllowed = displaySleepAllowed; self.closedDisplayEnabled = closedDisplayEnabled
-        self.sessionIsTrigger = sessionIsTrigger; self.sessionTimeRemaining = sessionTimeRemaining
+        self.idleSleepPrevented = idleSleepPrevented; self.displaySleepAllowed = displaySleepAllowed
+        self.backgroundLeaseActive = backgroundLeaseActive
     }
     public func matches(_ mode: WorkMode) -> Bool {
-        guard triggersEnabled == false else { return false }
-        if mode == .normal { return sleepDisabled == false && sessionActive == false && closedDisplayEnabled == false && lockPolicy == .immediate }
-        return lockPolicy == .immediate && sessionActive == true && displaySleepAllowed == true
-            && closedDisplayEnabled == (mode == .background) && sleepDisabled == (mode == .background)
-            && sessionIsTrigger == false && sessionTimeRemaining == 0
+        guard lockPolicy == .immediate, sleepDisabled == (mode == .background),
+              backgroundLeaseActive == (mode == .background) else { return false }
+        if mode == .normal { return idleSleepPrevented == false }
+        return idleSleepPrevented == true && displaySleepAllowed == true
     }
     public var diagnostic: String {
         func state(_ b: Bool?) -> String { b.map { $0 ? "开" : "关" } ?? "未知" }
-        return "全局防休眠 \(state(sleepDisabled))；会话 \(state(sessionActive))；自动触发 \(state(triggersEnabled))；允许熄屏 \(state(displaySleepAllowed))；合盖保持运行 \(state(closedDisplayEnabled))；触发会话 \(state(sessionIsTrigger))；剩余时长 \(sessionTimeRemaining.map(String.init) ?? "未知")；锁屏策略 \(lockPolicy)"
+        return "全局防休眠 \(state(sleepDisabled))；原生保活 \(state(idleSleepPrevented))；本应用允许熄屏 \(state(displaySleepAllowed))；合盖服务会话 \(state(backgroundLeaseActive))；锁屏策略 \(lockPolicy)"
     }
 }
 public protocol ModeBackend {

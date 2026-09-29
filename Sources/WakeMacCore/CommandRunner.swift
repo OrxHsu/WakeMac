@@ -3,7 +3,7 @@ import Darwin
 public enum CommandRunner {
     public static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 15) throws -> String {
         // A private temporary file avoids pipe-buffer deadlocks without retaining diagnostics.
-        let output = FileManager.default.temporaryDirectory.appendingPathComponent("workmodes-" + UUID().uuidString)
+        let output = FileManager.default.temporaryDirectory.appendingPathComponent("wakemac-" + UUID().uuidString)
         guard FileManager.default.createFile(atPath: output.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
             throw ModeError("无法创建命令输出缓冲。")
         }

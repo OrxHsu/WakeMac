@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
+import WakeMacPower
 
 private enum PreferencePage: String, CaseIterable {
     case automation = "自动收尾", command = "命令任务", settings = "偏好设置", history = "运行记录"
@@ -28,6 +30,14 @@ struct PreferencesView: View {
     @State private var shortcutDraft = ShortcutBinding.defaults
     @State private var shortcutEnabled = true
     @State private var notificationMessage = ""
+    @State private var helperMessage = ""
+    private var helperStatus: String {
+        switch SMAppService.daemon(plistName: PowerService.plistName).status {
+        case .enabled: "系统服务已批准"
+        case .requiresApproval: "等待系统批准"
+        default: "系统服务尚未启用"
+        }
+    }
     private var canSchedule: Bool { !model.busy && model.active != nil && model.active != .normal }
 
     var body: some View {
@@ -211,6 +221,44 @@ struct PreferencesView: View {
 
     private var settingsTab: some View {
         Group {
+            WorkCard(title: "合盖运行") {
+                Text(helperStatus).font(.system(size: 12, weight: .semibold))
+                Text("桌面工作直接使用原生保活。合盖继续运行需要启用 WakeMac 自带的系统服务，并在系统设置中批准一次。")
+                    .font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
+                HStack {
+                    Button("启用合盖服务…") {
+                        let service = SMAppService.daemon(plistName: PowerService.plistName)
+                        do {
+                            _ = try PowerService.peerRequirement(identifier: PowerService.identifier)
+                            try service.register()
+                            helperMessage = "服务已登记，请在系统设置 → 通用 → 登录项与扩展中批准 WakeMac。"
+                            SMAppService.openSystemSettingsLoginItems()
+                        } catch {
+                            if service.status == .requiresApproval {
+                                helperMessage = "服务已登记，正在等待系统批准。请在登录项与扩展中开启 WakeMac。"
+                                SMAppService.openSystemSettingsLoginItems()
+                            } else { helperMessage = error.localizedDescription }
+                        }
+                    }.disabled(model.busy || SMAppService.daemon(plistName: PowerService.plistName).status == .enabled)
+                    Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
+                    Button("移除服务") {
+                        Task {
+                            await model.choose(.normal)
+                            guard model.active == .normal, !model.error, !model.busy else {
+                                helperMessage = "请先成功恢复正常休眠，再移除服务。"; return
+                            }
+                            do {
+                                try await SMAppService.daemon(plistName: PowerService.plistName).unregister()
+                                helperMessage = "合盖服务已移除。桌面工作仍可使用。"
+                            } catch { helperMessage = error.localizedDescription }
+                        }
+                    }.disabled(model.busy)
+                }
+                if SMAppService.daemon(plistName: PowerService.plistName).status == .enabled {
+                    WorkNote(text: "授权已完成，可以选择后台工作。")
+                } else if !helperMessage.isEmpty { WorkNote(text: helperMessage) }
+                WorkNote(text: "切换回正常模式或退出应用会恢复休眠；异常断线和心跳超时由服务自动恢复。")
+            }
             WorkCard(title: "日常使用") {
                 Toggle("菜单栏显示模式和倒计时", isOn: Binding(get: { model.menuLabelEnabled }, set: model.setMenuLabel))
                 Rectangle().fill(WorkStyle.line).frame(height: 1)

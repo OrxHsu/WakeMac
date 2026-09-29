@@ -1,10 +1,13 @@
 // swift-tools-version: 6.0
 import PackageDescription
 let package = Package(name: "WakeMac", platforms: [.macOS(.v14)], products: [
-    .executable(name: "WakeMac", targets: ["WakeMac"])
+    .executable(name: "WakeMac", targets: ["WakeMac"]),
+    .executable(name: "WakeMacPowerHelper", targets: ["WakeMacPowerHelper"])
 ], targets: [
     .target(name: "WakeMacCore"),
-    .executableTarget(name: "WakeMac", dependencies: ["WakeMacCore"]),
+    .target(name: "WakeMacPower"),
+    .executableTarget(name: "WakeMac", dependencies: ["WakeMacCore", "WakeMacPower"]),
+    .executableTarget(name: "WakeMacPowerHelper", dependencies: ["WakeMacCore", "WakeMacPower"]),
     .testTarget(name: "WakeMacCoreTests", dependencies: ["WakeMacCore"]),
     .testTarget(name: "WakeMacAppTests", dependencies: ["WakeMac", "WakeMacCore"])
 ], swiftLanguageModes: [.v5])

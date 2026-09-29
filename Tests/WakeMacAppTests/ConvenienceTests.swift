@@ -13,7 +13,7 @@ actor AutomationBackend: ModeBackend {
     var isWaiting: Bool { gate != nil }
     func release() { gate?.resume(); gate = nil }
     func snapshot() -> Snapshot {
-        Snapshot(sleepDisabled: current == .background, lockPolicy: lock, sessionActive: current != .normal, triggersEnabled: false, displaySleepAllowed: true, closedDisplayEnabled: current == .background, sessionIsTrigger: false, sessionTimeRemaining: 0)
+        Snapshot(sleepDisabled: current == .background, lockPolicy: lock, idleSleepPrevented: current != .normal, displaySleepAllowed: true, backgroundLeaseActive: current == .background)
     }
     func configurePower(_ mode: WorkMode) async {
         if hold { hold = false; await withCheckedContinuation { gate = $0 } }
