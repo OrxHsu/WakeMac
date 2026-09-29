@@ -70,7 +70,7 @@ private struct SchedulePickerPanel: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
-                    Text("选择恢复时间").font(.system(size: 16, weight: .semibold))
+                    Text("选择恢复时间").font(WorkType.sectionTitle).accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button("今天") { day = context.date; month = calendar.dateInterval(of: .month, for: day)!.start }
                         .buttonStyle(.plain).foregroundStyle(WorkStyle.blue).font(.system(size: 11, weight: .medium))

@@ -23,7 +23,7 @@ struct PowerControls: View {
                     Button(model.helperStatus == .requiresApproval ? "完成授权…" : "启用服务…", action: model.enableHelper)
                         .buttonStyle(.plain).foregroundStyle(WorkStyle.blue).disabled(model.busy)
                 }
-            }.font(.system(size: compact ? 10 : 11)).foregroundStyle(WorkStyle.muted)
+            }.font(compact ? WorkType.compactCaption : WorkType.caption).foregroundStyle(WorkStyle.muted)
             if model.helperStatus != .enabled && !model.helperMessage.isEmpty {
                 Text(model.helperMessage).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -37,9 +37,9 @@ struct PowerControls: View {
                 Image(systemName: icon).font(.system(size: compact ? 15 : 18))
                     .foregroundStyle(enabled ? WorkStyle.blue : WorkStyle.muted).frame(width: 22)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: compact ? 12 : 14, weight: .semibold))
+                    Text(title).font(compact ? WorkType.compactLabel : WorkType.controlLabel)
                     Text(model.snapshot == nil ? "等待状态核验" : detail)
-                        .font(.system(size: compact ? 10 : 11)).foregroundStyle(WorkStyle.muted)
+                        .font(compact ? WorkType.compactCaption : WorkType.caption).foregroundStyle(WorkStyle.muted)
                 }
                 Spacer(minLength: 8)
             }

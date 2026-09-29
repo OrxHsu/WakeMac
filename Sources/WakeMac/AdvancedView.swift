@@ -6,7 +6,7 @@ struct AdvancedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             WorkCard(title: "菜单栏外观") {
-                HStack { Text("图标"); Spacer(); Picker("菜单栏图标", selection: $appearance.icon) { ForEach(AppearanceController.Icon.allCases) { Text($0.title).tag($0) } }.labelsHidden().frame(width: 160) }
+                HStack { Text("图标").font(WorkType.controlLabel); Spacer(); Picker("菜单栏图标", selection: $appearance.icon) { ForEach(AppearanceController.Icon.allCases) { Text($0.title).tag($0) } }.labelsHidden().frame(width: 160) }
                 HStack { Text("PNG、JPEG、TIFF 或 ICNS").font(.system(size: 11)).foregroundStyle(WorkStyle.muted); Spacer(); Button("选择图标…", action: appearance.chooseIcon) }
                 if appearance.icon == .custom { WorkToggle(title: "图标跟随系统明暗", detail: "关闭后保留原图颜色。", isOn: $appearance.template) }
                 WorkToggle(title: "菜单栏显示结束时间", detail: "关闭时显示剩余时长。", isOn: $appearance.showEndTime)

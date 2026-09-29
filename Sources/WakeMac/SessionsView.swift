@@ -5,9 +5,9 @@ struct SessionsView: View {
     @ObservedObject var controller: SessionController
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            WorkCard(title: "工作会话", subtitle: "选择结束条件。条件满足后恢复正常模式，并释放本会话的保活效果。") {
+            WorkCard(title: "会话设置", subtitle: "选择何时结束；到点恢复正常休眠。") {
                 HStack {
-                    Text("结束条件").font(.system(size: 12, weight: .medium))
+                    Text("结束条件").font(WorkType.controlLabel)
                     Spacer()
                     Picker("结束条件", selection: $controller.endCondition) {
                         ForEach(SessionEndCondition.allCases) { item in Text(item.title).tag(item) }
@@ -15,7 +15,7 @@ struct SessionsView: View {
                 }.disabled(controller.isActive || controller.isStarting)
                 conditionFields.disabled(controller.isActive || controller.isStarting)
                 HStack {
-                    Text("开始时使用").font(.system(size: 12, weight: .medium))
+                    Text("开始时使用").font(WorkType.controlLabel)
                     Spacer()
                     Picker("会话工作模式", selection: $controller.defaultMode) {
                         Text("桌面工作").tag(WorkMode.desk)
@@ -34,7 +34,7 @@ struct SessionsView: View {
                     }.buttonStyle(WorkButtonStyle(prominent: true)).disabled(controller.isStarting)
                 }
             }
-            WorkCard(title: "会话效果", subtitle: "工作状态通过核验时生效，也适用于手动与触发器工作模式。恢复正常模式或退出应用会释放效果。") {
+            WorkCard(title: "会话效果", subtitle: "手动、会话和自动触发的工作模式均适用；恢复正常休眠后停止。") {
                 WorkToggle(title: "防止显示器闲时休眠", detail: "不会改变锁屏或密码设置；锁定后暂停。", isOn: $controller.preventDisplaySleep)
                 effectText(controller.effectReport.display)
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
@@ -50,7 +50,7 @@ struct SessionsView: View {
                     }
                 }
             }
-            WorkCard(title: "磁盘保活", subtitle: "工作时，在所选本地目录每分钟写入并同步一个 1 字节临时文件，然后删除。磁盘控制器仍可能自行休眠。") {
+            WorkCard(title: "磁盘保活", subtitle: "定期访问所选磁盘，减少闲置休眠；部分磁盘仍可能自行休眠。") {
                 WorkToggle(title: "工作期间定期访问磁盘", detail: "仅作用于所选目录；不阻止手动弹出磁盘。", isOn: $controller.driveAlive)
                 ForEach(controller.driveDirectories, id: \.path) { directory in
                     HStack(alignment: .top) {
@@ -73,14 +73,14 @@ struct SessionsView: View {
             WorkNote(text: "保持工作状态，直到你结束会话或手动切换模式。")
         case .duration:
             HStack {
-                Text("持续时长").font(.system(size: 12))
+                Text("持续时长").font(WorkType.controlLabel)
                 Spacer()
                 TextField("分钟", value: $controller.durationMinutes, format: .number).frame(width: 75)
                     .textFieldStyle(.roundedBorder).accessibilityLabel("会话时长，分钟")
                 Text("分钟").font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
             }
         case .untilDate:
-            HStack { Text("结束时间").font(.system(size: 12)); Spacer(); SchedulePicker(selection: $controller.endDate) }
+            HStack { Text("结束时间").font(WorkType.controlLabel); Spacer(); SchedulePicker(selection: $controller.endDate) }
         case .application:
             HStack {
                 Text(controller.applicationURL?.deletingPathExtension().lastPathComponent ?? "未选择应用")
@@ -99,6 +99,6 @@ struct SessionsView: View {
         }
     }
     private func effectText(_ text: String) -> some View {
-        Text(text).font(.system(size: 11)).foregroundStyle(WorkStyle.muted).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(WorkType.caption).foregroundStyle(WorkStyle.muted).fixedSize(horizontal: false, vertical: true)
     }
 }

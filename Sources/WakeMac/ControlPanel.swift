@@ -50,7 +50,7 @@ struct ControlPanel: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(model.busy ? "正在切换" : model.pending != nil ? "等待确认" : model.error ? "需要检查" : model.active?.title ?? "读取状态")
-                    .font(.system(size: 28, weight: .semibold, design: .rounded))
+                    .font(WorkType.pageTitle)
                 HStack(spacing: 6) {
                     Circle().fill(model.error ? Color.orange : WorkStyle.blue).frame(width: 5, height: 5)
                     Text(model.headline).font(.system(size: 11, weight: .medium))

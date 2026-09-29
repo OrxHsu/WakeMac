@@ -40,8 +40,8 @@ struct PreferencesView: View {
             sidebar.padding(.leading, 12).padding(.vertical, 12)
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(page.rawValue).font(.system(size: 28, weight: .semibold, design: .rounded))
-                    Text(page.subtitle).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
+                    Text(page.rawValue).font(WorkType.pageTitle).accessibilityAddTraits(.isHeader)
+                    Text(page.subtitle).font(WorkType.body).foregroundStyle(WorkStyle.muted)
                 }.padding(.horizontal, 30).padding(.top, 32).padding(.bottom, 24)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -66,7 +66,7 @@ struct PreferencesView: View {
         }
         .frame(minWidth: 780, minHeight: 630)
         .background(WorkStyle.canvas)
-        .font(.system(size: 12)).foregroundStyle(WorkStyle.ink).tint(WorkStyle.blue)
+        .font(WorkType.body).foregroundStyle(WorkStyle.ink).tint(WorkStyle.blue)
         .buttonStyle(WorkButtonStyle())
         .onAppear { shortcutDraft = hotkeys.bindings; shortcutEnabled = hotkeys.enabled }
     }
@@ -292,7 +292,7 @@ struct PreferencesView: View {
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("系统通知")
+                        Text("系统通知").font(WorkType.controlLabel)
                         Text(notifier.enabled ? "通知已开启" : "接收任务结果与电量提醒").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     }
                     Spacer()
@@ -307,7 +307,7 @@ struct PreferencesView: View {
                 WorkToggle(title: "启用快捷键", isOn: $shortcutEnabled)
                 ForEach(shortcutDraft.indices, id: \.self) { index in
                     HStack {
-                        Text(shortcutDraft[index].title)
+                        Text(shortcutDraft[index].title).font(WorkType.controlLabel)
                         Spacer()
                         Picker("修饰键", selection: $shortcutDraft[index].modifiers) {
                             ForEach(GlobalHotKeys.modifiers, id: \.1) { Text($0.0).tag($0.1) }

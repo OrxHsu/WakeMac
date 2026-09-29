@@ -8,7 +8,7 @@ struct TriggersView: View {
     @State private var editing: TriggerRule?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            WorkCard(title: "自动触发规则", subtitle: "条件满足时进入工作模式，条件结束时由会话恢复策略处理。所有规则默认关闭；系统锁定保护始终保留。") {
+            WorkCard(title: "触发规则", subtitle: "条件满足时进入工作模式，条件结束时由会话恢复策略处理。所有规则默认关闭；系统锁定保护始终保留。") {
                 HStack {
                     Text(controller.status).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                     Spacer()
@@ -59,7 +59,7 @@ struct TriggersView: View {
     }
     private func permissionRow(kind: TriggerKind, title: String, explanation: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 12, weight: .semibold))
+            Text(title).font(WorkType.controlLabel)
             Text(explanation).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
             HStack {
                 Button("请求授权") { controller.requestPermission(for: kind) }.buttonStyle(WorkButtonStyle())
@@ -77,7 +77,7 @@ private struct TriggerRuleEditor: View {
     @State private var preview = TriggerSnapshot()
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("编辑触发规则").font(.system(size: 20, weight: .semibold))
+            Text("编辑触发规则").font(WorkType.dialogTitle).accessibilityAddTraits(.isHeader)
             TextField("规则名称", text: $rule.name).textFieldStyle(.roundedBorder)
             HStack {
                 Picker("进入模式", selection: $rule.mode) {

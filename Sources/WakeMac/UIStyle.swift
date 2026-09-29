@@ -14,6 +14,18 @@ enum WorkStyle {
     static let muted = Color(light: 0x65748A, dark: 0xA2AFC2)
 }
 
+/// Shared semantic hierarchy for the main window, sheets, and compact panel.
+enum WorkType {
+    static let pageTitle = Font.system(size: 28, weight: .semibold, design: .rounded)
+    static let sectionTitle = Font.system(size: 17, weight: .semibold)
+    static let dialogTitle = Font.system(size: 20, weight: .semibold)
+    static let controlLabel = Font.system(size: 13, weight: .regular)
+    static let body = Font.system(size: 12, weight: .regular)
+    static let caption = Font.system(size: 11, weight: .regular)
+    static let compactLabel = Font.system(size: 12, weight: .regular)
+    static let compactCaption = Font.system(size: 10, weight: .regular)
+}
+
 private extension Color {
     init(light: UInt32, dark: UInt32) {
         self.init(nsColor: NSColor(name: nil) { appearance in
@@ -96,9 +108,9 @@ struct WorkCard<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.system(size: 14, weight: .semibold))
-                if let subtitle { Text(subtitle).font(.system(size: 12)).foregroundStyle(WorkStyle.muted).fixedSize(horizontal: false, vertical: true) }
+            VStack(alignment: .leading, spacing: 7) {
+                Text(title).font(WorkType.sectionTitle).accessibilityAddTraits(.isHeader)
+                if let subtitle { Text(subtitle).font(WorkType.caption).foregroundStyle(WorkStyle.muted).fixedSize(horizontal: false, vertical: true) }
             }
             content
         }
@@ -121,8 +133,8 @@ struct WorkToggle: View {
                     .foregroundStyle(isOn ? WorkStyle.blue : WorkStyle.muted).frame(width: 22)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(title).font(.system(size: compact ? 12 : 13, weight: .medium))
-                if let detail { Text(detail).font(.system(size: compact ? 10 : 11)).foregroundStyle(WorkStyle.muted)
+                Text(title).font(compact ? WorkType.compactLabel : WorkType.controlLabel)
+                if let detail { Text(detail).font(compact ? WorkType.compactCaption : WorkType.caption).foregroundStyle(WorkStyle.muted)
                     .fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
@@ -139,7 +151,7 @@ struct WorkNote: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon).padding(.top, 1)
             Text(text).fixedSize(horizontal: false, vertical: true)
-        }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
+        }.font(WorkType.caption).foregroundStyle(WorkStyle.muted)
     }
 }
 
