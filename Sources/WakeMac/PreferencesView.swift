@@ -4,16 +4,19 @@ import ServiceManagement
 import WakeMacCore
 
 private enum PreferencePage: String, CaseIterable {
-    case power = "工作模式", automation = "自动收尾", command = "命令任务", settings = "偏好设置", history = "运行记录"
+    case power = "工作模式", sessions = "工作会话", triggers = "自动触发", automation = "自动收尾", command = "命令任务", settings = "偏好设置", advanced = "外观与脚本", history = "运行记录"
     var icon: String {
-        switch self { case .power: "sun.max"; case .automation: "timer"; case .command: "terminal"; case .settings: "slider.horizontal.3"; case .history: "clock.arrow.circlepath" }
+        switch self { case .power: "sun.max"; case .sessions: "hourglass"; case .triggers: "bolt.badge.clock"; case .automation: "timer"; case .command: "terminal"; case .settings: "slider.horizontal.3"; case .advanced: "paintbrush.pointed"; case .history: "clock.arrow.circlepath" }
     }
     var subtitle: String {
         switch self {
         case .power: "保持唤醒，合盖继续；工作结束后安心休眠。"
+        case .sessions: "按时间、应用或下载，决定这次工作的结束。"
+        case .triggers: "条件满足时自动开始，手动操作始终优先。"
         case .automation: "让工作按时结束，也照顾好电量。"
         case .command: "交给它一条命令，完成后安心休息。"
         case .settings: "按你的习惯，安排每一次切换。"
+        case .advanced: "调整菜单栏与通知声音，或用脚本管理会话。"
         case .history: "模式切换与运行状态，都留在这里。"
         }
     }
@@ -22,7 +25,7 @@ private enum PreferencePage: String, CaseIterable {
 struct PreferencesView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var hotkeys: GlobalHotKeys
-    let notifier: LocalNotifier
+    @ObservedObject var notifier: LocalNotifier
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = PreferencePage.power
     @State private var date = Date().addingTimeInterval(3600)
@@ -30,7 +33,6 @@ struct PreferencesView: View {
     @State private var directory = FileManager.default.homeDirectoryForCurrentUser.path
     @State private var shortcutDraft = ShortcutBinding.defaults
     @State private var shortcutEnabled = true
-    @State private var notificationMessage = ""
     private var canSchedule: Bool { !model.busy && model.active != nil && model.active != .normal }
 
     var body: some View {
@@ -45,18 +47,24 @@ struct PreferencesView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         switch page {
                         case .power: powerTab
+                        case .sessions:
+                            SessionsView(controller: model.sessions)
+                            IdlePolicyView(controller: model.idlePolicy)
+                        case .triggers: TriggersView(controller: model.triggers)
                         case .automation: timerTab
                         case .command: taskTab
                         case .settings: settingsTab
+                        case .advanced: AdvancedView(appearance: model.appearance)
                         case .history: historyTab
                         }
                     }.padding(.horizontal, 28).padding(.bottom, 28)
                 }
+                .id(page)
                 .frame(maxWidth: .infinity)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
         }
-        .frame(width: 780, height: 630)
+        .frame(minWidth: 780, minHeight: 630)
         .background(WorkStyle.canvas)
         .font(.system(size: 12)).foregroundStyle(WorkStyle.ink).tint(WorkStyle.blue)
         .buttonStyle(WorkButtonStyle())
@@ -100,7 +108,13 @@ struct PreferencesView: View {
         Group {
             WorkCard(title: "运行控制", subtitle: model.headline) {
                 PowerControls(model: model)
-                WorkNote(text: "屏幕可以自动关闭，锁屏保护始终保留。", icon: "lock.shield")
+                HStack {
+                    Button("工作会话") { page = .sessions }
+                    Button("自动触发") { page = .triggers }
+                    Spacer()
+                }
+                if model.sessions.isActive { WorkNote(text: model.sessions.status, icon: "hourglass") }
+                if model.triggerOwnedMode != nil { WorkNote(text: model.triggerSummary, icon: "bolt.badge.clock") }
             }
             WorkCard(title: "快捷模式") {
                 HStack(alignment: .top, spacing: 10) {
@@ -173,8 +187,7 @@ struct PreferencesView: View {
                 }
             }
             WorkCard(title: "低电量保护") {
-                Toggle("电池供电时自动保护", isOn: Binding(get: { model.automation.batteryEnabled }, set: { model.setBatteryProtection(enabled: $0, threshold: model.automation.batteryThreshold) }))
-                    .toggleStyle(.switch).controlSize(.small)
+                WorkToggle(title: "电池供电时自动保护", isOn: Binding(get: { model.automation.batteryEnabled }, set: { model.setBatteryProtection(enabled: $0, threshold: model.automation.batteryThreshold) }))
                 HStack {
                     Text("休眠电量").foregroundStyle(WorkStyle.muted)
                     Spacer()
@@ -213,7 +226,7 @@ struct PreferencesView: View {
                     Text("工作目录").font(.system(size: 11, weight: .medium)).foregroundStyle(WorkStyle.muted)
                     HStack(spacing: 8) {
                         TextField("工作目录", text: $directory).textFieldStyle(.plain).padding(10)
-                            .background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 7))
+                            .background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: WorkStyle.inputRadius))
                             .disabled(model.jobRunning)
                         Button("选择…") {
                             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -273,22 +286,25 @@ struct PreferencesView: View {
                 WorkNote(text: "切换回正常模式或退出应用会恢复休眠；异常断线和心跳超时由服务自动恢复。")
             }
             WorkCard(title: "日常使用") {
-                Toggle("菜单栏显示模式和倒计时", isOn: Binding(get: { model.menuLabelEnabled }, set: model.setMenuLabel))
+                WorkToggle(title: "菜单栏显示模式和倒计时", isOn: Binding(get: { model.menuLabelEnabled }, set: model.setMenuLabel))
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
-                Toggle("登录时启动", isOn: Binding(get: { model.loginEnabled }, set: model.setLogin))
+                WorkToggle(title: "登录时启动", isOn: Binding(get: { model.loginEnabled }, set: model.setLogin))
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("系统通知")
-                        Text("接收任务结果与电量提醒").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
+                        Text(notifier.enabled ? "通知已开启" : "接收任务结果与电量提醒").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     }
                     Spacer()
-                    Button("开启通知…") { Task { notificationMessage = await notifier.request() ? "通知已开启。" : "请在系统设置 → 通知中允许 WakeMac。" } }
+                    Button(notifier.enabled ? "通知设置…" : "开启通知…") {
+                        if notifier.enabled { notifier.showSettings() }
+                        else { Task { _ = await notifier.request() } }
+                    }
                 }
-                if !notificationMessage.isEmpty { WorkNote(text: notificationMessage) }
+                if !notifier.message.isEmpty { WorkNote(text: notifier.message) }
             }.toggleStyle(.switch).controlSize(.small)
             WorkCard(title: "全局快捷键") {
-                Toggle("启用快捷键", isOn: $shortcutEnabled).toggleStyle(.switch).controlSize(.small)
+                WorkToggle(title: "启用快捷键", isOn: $shortcutEnabled)
                 ForEach(shortcutDraft.indices, id: \.self) { index in
                     HStack {
                         Text(shortcutDraft[index].title)
@@ -344,8 +360,8 @@ struct PreferencesView: View {
                         }.padding(16)
                         Rectangle().fill(WorkStyle.line).frame(height: 1).padding(.horizontal, 16)
                     }
-                }.background(WorkStyle.surface, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(WorkStyle.line))
+                }.background(WorkStyle.surface, in: RoundedRectangle(cornerRadius: WorkStyle.cardRadius))
+                    .overlay(RoundedRectangle(cornerRadius: WorkStyle.cardRadius).strokeBorder(WorkStyle.line.opacity(0.5)))
             }
             WorkNote(text: "合盖与屏幕状态约每 10 秒采样；休眠和唤醒按系统事件记录。")
         }

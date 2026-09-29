@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
+<dictionary title="WakeMac Scripting">
+  <suite name="WakeMac" code="WMac" description="Native work sessions with lock protection.">
+    <command name="start session" code="WMacStar" description="Start a verified desktop or closed-lid session.">
+      <cocoa class="WakeMacStartSessionCommand"/>
+      <parameter name="mode" code="mode" type="text" optional="yes" description="desktop (default) or background"><cocoa key="mode"/></parameter>
+      <parameter name="for minutes" code="mins" type="integer" optional="yes" description="1–10080 minutes; omit for indefinite"><cocoa key="minutes"/></parameter>
+      <result type="text"/>
+    </command>
+    <command name="end session" code="WMacStop" description="Restore verified normal sleep."><cocoa class="WakeMacEndSessionCommand"/><result type="text"/></command>
+    <command name="session status" code="WMacStat" description="Read verified mode status."><cocoa class="WakeMacSessionStatusCommand"/><result type="text"/></command>
+  </suite>
+</dictionary>

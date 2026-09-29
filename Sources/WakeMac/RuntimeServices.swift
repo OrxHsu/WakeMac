@@ -1,6 +1,7 @@
 import AppKit
 import IOKit.ps
 import UserNotifications
+import Combine
 import WakeMacCore
 
 struct HistoryEntry: Codable, Identifiable {
@@ -40,21 +41,52 @@ struct BatterySource {
         return nil
     }
 }
-@MainActor final class LocalNotifier: NSObject, UNUserNotificationCenterDelegate {
-    var enabled = false
+@MainActor final class LocalNotifier: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+    @Published var enabled = false
+    @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
+    @Published var message = ""
+    private let readAuthorization: () async -> UNAuthorizationStatus
+    private let askAuthorization: () async throws -> Bool
+    private let openSettings: (URL) -> Bool
+    init(readAuthorization: @escaping () async -> UNAuthorizationStatus = { await UNUserNotificationCenter.current().notificationSettings().authorizationStatus },
+         askAuthorization: @escaping () async throws -> Bool = { try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) },
+         openSettings: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+        self.readAuthorization = readAuthorization; self.askAuthorization = askAuthorization; self.openSettings = openSettings
+        super.init()
+    }
+    static var settingsURL: URL {
+        var url = URLComponents(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!
+        url.queryItems = [URLQueryItem(name: "id", value: Bundle.main.bundleIdentifier ?? "local.orx.WorkModes")]
+        return url.url!
+    }
+    func refresh() async {
+        authorizationStatus = await readAuthorization()
+        enabled = authorizationStatus == .authorized || authorizationStatus == .provisional
+    }
     func configure() {
         let center = UNUserNotificationCenter.current(); center.delegate = self
-        center.getNotificationSettings { [weak self] settings in
-            Task { @MainActor in self?.enabled = settings.authorizationStatus == .authorized }
-        }
+        Task { await refresh() }
     }
     func request() async -> Bool {
-        enabled = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
+        await refresh()
+        if authorizationStatus == .notDetermined {
+            do { _ = try await askAuthorization(); await refresh() }
+            catch { message = "通知授权请求失败：" + error.localizedDescription; return false }
+        }
+        if !enabled {
+            let opened = openSettings(Self.settingsURL)
+            message = opened ? "已打开通知设置，请选择 WakeMac 并允许通知。" : "无法打开通知设置，请在系统设置 → 通知中允许 WakeMac。"
+        } else { message = "通知已开启。" }
         return enabled
+    }
+    func showSettings() {
+        message = openSettings(Self.settingsURL) ? "已打开通知设置。" : "请打开系统设置 → 通知 → WakeMac。"
     }
     func send(_ text: String) {
         guard enabled else { return }
-        let content = UNMutableNotificationContent(); content.title = "WakeMac"; content.body = text; content.sound = .default
+        let content = UNMutableNotificationContent(); content.title = "WakeMac"; content.body = text
+        let name = UserDefaults.standard.string(forKey: "appearance.sound") ?? ""
+        content.sound = name.isEmpty ? .default : UNNotificationSound(named: UNNotificationSoundName(rawValue: name))
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }

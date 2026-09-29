@@ -147,7 +147,7 @@ private struct SchedulePickerPanel: View {
                 .font(.system(size: 12, weight: selected ? .semibold : .regular, design: .rounded))
                 .frame(maxWidth: .infinity).frame(height: 32)
                 .foregroundStyle(selected ? Color.white : past ? WorkStyle.muted.opacity(0.35) : WorkStyle.ink)
-                .background(selected ? Color.blue : .clear, in: RoundedRectangle(cornerRadius: 10))
+                .background(selected ? WorkStyle.blue : .clear, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(calendar.isDateInToday(value) && !selected ? WorkStyle.blue.opacity(0.5) : .clear))
                 .contentShape(RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain).disabled(past).workKeyboardFocus(radius: 10)

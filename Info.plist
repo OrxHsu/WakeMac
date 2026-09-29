@@ -1,15 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>local.orx.WorkModes</string>
-<key>CFBundleName</key><string>WakeMac</string>
-<key>CFBundleDisplayName</key><string>WakeMac</string>
-<key>CFBundleExecutable</key><string>WakeMac</string>
-<key>CFBundleIconFile</key><string>AppIcon.icns</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.1</string>
-<key>CFBundleVersion</key><string>7</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>LSUIElement</key><true/>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>local.orx.WorkModes</string>
+	<key>CFBundleName</key>
+	<string>WakeMac</string>
+	<key>CFBundleDisplayName</key>
+	<string>WakeMac</string>
+	<key>CFBundleExecutable</key>
+	<string>WakeMac</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.3.0</string>
+	<key>CFBundleVersion</key>
+	<string>8</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSAppleScriptEnabled</key>
+	<true/>
+	<key>OSAScriptingDefinition</key>
+	<string>WakeMac.sdef</string>
+	<key>NSLocationUsageDescription</key>
+	<string>仅在你启用 Wi-Fi 触发规则时读取当前网络名称，不保存位置。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>仅在你启用 Wi-Fi 触发规则时读取当前网络名称，不保存位置。</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>仅用于你启用的已连接蓝牙设备触发规则。</string>
+	<key>NSBluetoothUsageDescription</key>
+	<string>仅用于你启用的已连接蓝牙设备触发规则。</string>
+</dict>
+</plist>

@@ -19,8 +19,12 @@ extension WorkMode {
 @MainActor final class AppModel: ObservableObject {
     let backend: any ModeBackend
     let preferences: UserDefaults
-    init(backend: any ModeBackend = MacBackend(), preferences: UserDefaults = .standard, historyURL: URL? = nil, jobLogDirectory: URL? = nil) {
+    let triggerSource: (any TriggerObservationSource)?
+    let sessionEffects: (any SessionEffectManaging)?
+    init(backend: any ModeBackend = MacBackend(), preferences: UserDefaults = .standard, historyURL: URL? = nil, jobLogDirectory: URL? = nil,
+         triggerSource: (any TriggerObservationSource)? = nil, sessionEffects: (any SessionEffectManaging)? = nil) {
         self.backend = backend; self.preferences = preferences
+        self.triggerSource = triggerSource; self.sessionEffects = sessionEffects
         self.historyStore = HistoryStore(url: historyURL)
         self.history = historyStore.entries
         self.jobLogDirectory = jobLogDirectory ?? AppPaths.root.appendingPathComponent("Task Logs")
@@ -41,6 +45,30 @@ extension WorkMode {
     @Published var menuLabelEnabled = true
     @Published var convenienceMessage = ""
     @Published var helperMessage = ""
+    @Published var triggerSummary = "自动触发尚未接管运行模式"
+    lazy var triggers = TriggerController(preferences: preferences, source: triggerSource)
+    lazy var sessions = makeSessionController()
+    lazy var idlePolicy: IdlePolicyController = {
+        let controller = IdlePolicyController(preferences: preferences)
+        controller.workingProvider = { [weak self] in self?.keepsAwake == true && self?.snapshot?.lockPolicy == .immediate }
+        controller.allowsScreenSaver = { [weak self] in self?.sessions.preventScreenSaver != true }
+        controller.preflight = { [weak self] in
+            guard let self, !self.busy else { return false }
+            let revision = self.generation
+            guard let current = try? await self.backend.snapshot() else { return false }
+            return self.generation == revision && !self.busy && current.lockPolicy == .immediate && current.idleSleepPrevented == true
+        }
+        return controller
+    }()
+    lazy var appearance: AppearanceController = {
+        let controller = AppearanceController(preferences: preferences)
+        controller.onUpdate = { [weak self] in self?.onUpdate?() }
+        return controller
+    }()
+    var triggerOwnedMode: WorkMode?
+    var suppressedTriggerIDs: Set<UUID> = []
+    var lastFeatureSample = Date.distantPast
+    var featureTickRunning = false
     @Published var jobRunning = false
     @Published var jobStatus = "尚未启动命令"
     @Published var jobLogURL: URL?
@@ -58,7 +86,7 @@ extension WorkMode {
     @Published var error = false
     @Published var loginEnabled = SMAppService.mainApp.status == .enabled
     private var refreshID: UUID?
-    private var generation = 0
+    var generation = 0
     var quitWhenReady = false
     var onUpdate: (() -> Void)?
     var showPanel: (() -> Void)?
@@ -121,6 +149,11 @@ extension WorkMode {
             let current = try await backend.snapshot()
             guard generation == version, !busy, refreshID == id else { return }
             snapshot = current; observeDisplay(DisplayState.read())
+            if current.lockPolicy != .immediate && current.idleSleepPrevented == true {
+                refreshID = nil
+                await choose(.normal, automatic: true)
+                return
+            }
             active = WorkMode.allCases.first { current.matches($0) }
             if let target = pending, current.lockPolicy == .immediate {
                 refreshID = nil
@@ -136,8 +169,12 @@ extension WorkMode {
             self.error = true; message = reason
         }
     }
-    func choose(_ mode: WorkMode, sleep: Bool = false, automatic: Bool = false, batterySleep: Bool = false) async {
+    func choose(_ mode: WorkMode, sleep: Bool = false, automatic: Bool = false, batterySleep: Bool = false, startupRecovery: Bool = false) async {
         guard !busy else { return }
+        if !automatic || mode == .normal {
+            sessions.manualModeChanged()
+            if !startupRecovery { suppressCurrentTriggers() }
+        }
         if !automatic { automaticSleepRevision += 1; automation.cancelJobSleep(); automation.resetBatterySession() }
         if mode == .normal { automation.deadline = nil; automation.cancelJobSleep(); automation.cancelBatterySleep() }
         record((automatic ? "自动切换：" : "切换模式：") + mode.title)
@@ -149,8 +186,8 @@ extension WorkMode {
         message = "正在应用并核验「\(mode.title)」…"; onUpdate?()
         let revision = automaticSleepRevision
         let result = sleep ? await coordinator.sleep { [weak self] in
-            await MainActor.run {
-                guard let self else { return false }
+            guard let self else { return false }
+            return await MainActor.run {
                 guard !automatic || self.automaticSleepRevision == revision else { return false }
                 if batterySleep {
                     let fresh = self.finalBatteryReading != nil ? self.finalBatteryReading?() : self.battery
@@ -190,7 +227,7 @@ extension WorkMode {
         else { record(result == .sleepCancelled ? message : (sleep ? "已发送系统休眠请求。" : "模式已核验：" + mode.title)) }
         onUpdate?()
         if quitWhenReady {
-            if active == .normal && pending == nil && !error { quitApplication?() }
+            if active == .normal && pending == nil && !error { sessions.shutdown(); quitApplication?() }
             else if mode != .normal { await choose(.normal) }
             else if error { quitWhenReady = false }
         }
@@ -256,6 +293,10 @@ extension WorkMode {
         model.openPreferences = { [weak self] in self?.showPreferences() }
         model.finalBatteryReading = { BatterySource.read() }
         notifier.configure()
+        ScriptBridge.model = model
+        observers.append(NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in await self?.notifier.refresh() }
+        })
         model.notificationHandler = { [weak self] text in self?.notifier.send(text) }
         hotkeys.handler = { [weak self] id in
             guard let self else { return }
@@ -277,7 +318,7 @@ extension WorkMode {
         updateMenu()
         if !UserDefaults.standard.bool(forKey: "HasConfiguredMode") { showPreferences() }
         Task {
-            if UserDefaults.standard.bool(forKey: "HasConfiguredMode") { await model.choose(.normal) }
+            if UserDefaults.standard.bool(forKey: "HasConfiguredMode") { await model.choose(.normal, automatic: true, startupRecovery: true) }
             else { await model.refresh() }
         }
         timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
@@ -317,7 +358,8 @@ extension WorkMode {
     }
     func showPreferences() {
         if preferencesWindow == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 630), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 720), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+            window.contentMinSize = NSSize(width: 780, height: 630)
             window.title = "WakeMac"; window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = false
             window.titleVisibility = .visible
@@ -331,7 +373,7 @@ extension WorkMode {
         NSApp.activate(ignoringOtherApps: true)
     }
     func updateMenu() {
-        item.button?.image = MenuMark.image()
+        item.button?.image = model.appearance.menuImage()
         item.button?.title = model.menuText.isEmpty ? "" : " " + model.menuText
         item.button?.font = .systemFont(ofSize: 11, weight: .medium)
         item.button?.toolTip = "WakeMac · " + model.headline

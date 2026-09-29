@@ -12,6 +12,7 @@ cp "$BUILD_DIR/release/WakeMacPowerHelper" "$APP/Contents/MacOS/WakeMacPowerHelp
 cp "$PROJECT_DIR/Resources/local.orx.WakeMac.PowerHelper.plist" "$APP/Contents/Library/LaunchDaemons/"
 cp "$PROJECT_DIR/Info.plist" "$APP/Contents/Info.plist"
 cp "$PROJECT_DIR/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+cp "$PROJECT_DIR/Resources/WakeMac.sdef" "$APP/Contents/Resources/WakeMac.sdef"
 codesign --force --options runtime --sign "${WAKEMAC_SIGN_IDENTITY:--}" --identifier local.orx.WakeMac.PowerHelper "$APP/Contents/MacOS/WakeMacPowerHelper"
 codesign --force --options runtime --sign "${WAKEMAC_SIGN_IDENTITY:--}" "$APP"
 codesign --verify --strict "$APP"

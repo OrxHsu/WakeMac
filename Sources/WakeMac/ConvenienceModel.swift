@@ -8,7 +8,7 @@ import WakeMacCore
 
 extension AppModel {
     var countdownText: String? {
-        guard let end = automation.nextDeadline else { return nil }
+        guard let end = [automation.nextDeadline, sessions.deadline].compactMap({ $0 }).min() else { return nil }
         let seconds = max(0, Int(ceil(end.timeIntervalSince(now))))
         if automation.batterySleepAt == end { return "低电量：\(seconds) 秒后休眠" }
         if automation.jobSleepAt == end { return "任务已完成：\(seconds) 秒后休眠" }
@@ -19,7 +19,11 @@ extension AppModel {
         if busy { return "切换中" }
         if error || pending != nil { return "待处理" }
         let name = active.map { $0 == .background ? "后台" : $0 == .desk ? "桌面" : "正常" } ?? "未知"
-        guard let end = automation.nextDeadline else { return name }
+        guard let end = [automation.nextDeadline, sessions.deadline].compactMap({ $0 }).min() else { return name }
+        if appearance.showEndTime {
+            let formatter = DateFormatter(); formatter.dateFormat = appearance.twentyFourHour ? "HH:mm" : "h:mm a"
+            return name + " · " + formatter.string(from: end)
+        }
         return name + " · \(max(1, Int(ceil(end.timeIntervalSince(now) / 60))))m"
     }
     func record(_ text: String, notify: Bool = false) {
@@ -37,7 +41,8 @@ extension AppModel {
         onUpdate?()
     }
     func cancelVisibleCountdown() {
-        guard let next = automation.nextDeadline else { return }
+        guard let next = [automation.nextDeadline, sessions.deadline].compactMap({ $0 }).min() else { return }
+        if sessions.deadline == next { Task { await sessions.end() }; return }
         if automation.batterySleepAt == next {
             automaticSleepRevision += 1; automation.cancelBatterySleep(); record("已取消本次低电量休眠。")
         } else if automation.jobSleepAt == next {
@@ -87,6 +92,7 @@ extension AppModel {
                 await choose(.normal, sleep: true, automatic: true)
             }
         }
+        await tickFeatures(now: date, battery: reading)
     }
     func startJob(command: String, directory: String) async {
         guard !jobRunning, !busy else { return }

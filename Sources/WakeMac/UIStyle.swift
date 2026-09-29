@@ -2,6 +2,8 @@ import SwiftUI
 import AppKit
 
 enum WorkStyle {
+    static let cardRadius: CGFloat = 18
+    static let inputRadius: CGFloat = 8
     static let blue = Color(light: 0x2563EB, dark: 0x79A9FF)
     static let canvas = Color(light: 0xF7F9FC, dark: 0x171B23)
     static let surface = Color(light: 0xFFFFFF, dark: 0x202631)
@@ -23,20 +25,26 @@ private extension Color {
     }
 }
 
-struct WorkButtonStyle: PrimitiveButtonStyle {
+struct WorkButtonStyle: ButtonStyle {
     var prominent = false
+    @Environment(\.isEnabled) private var isEnabled
+
     @ViewBuilder func makeBody(configuration: Configuration) -> some View {
+        let label = configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .padding(.horizontal, 15).padding(.vertical, 8)
+            .foregroundStyle(prominent ? Color.white : WorkStyle.ink)
+            .opacity(isEnabled ? 1 : 0.45)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
         if #available(macOS 26.0, *) {
             if prominent {
-                Button(role: configuration.role, action: configuration.trigger) { configuration.label }
-                    .buttonStyle(.glassProminent).tint(Color.blue).controlSize(.large)
+                label.glassEffect(.regular.tint(WorkStyle.blue).interactive(isEnabled), in: Capsule())
             } else {
-                Button(role: configuration.role, action: configuration.trigger) { configuration.label }
-                    .buttonStyle(.glass).controlSize(.large)
+                label.glassEffect(.regular.interactive(isEnabled), in: Capsule())
             }
         } else {
-            Button(role: configuration.role, action: configuration.trigger) { configuration.label }
-                .buttonStyle(.bordered).controlSize(.large)
+            label.background(prominent ? WorkStyle.blue : WorkStyle.surface, in: Capsule())
+                .overlay(Capsule().strokeBorder(WorkStyle.line))
         }
     }
 }
@@ -95,8 +103,32 @@ struct WorkCard<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(22)
-        .background(WorkStyle.surface, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(WorkStyle.line.opacity(0.5)))
+        .background(WorkStyle.surface, in: RoundedRectangle(cornerRadius: WorkStyle.cardRadius))
+        .overlay(RoundedRectangle(cornerRadius: WorkStyle.cardRadius).strokeBorder(WorkStyle.line.opacity(0.5)))
+    }
+}
+
+struct WorkToggle: View {
+    let title: String
+    var detail: String? = nil
+    var icon: String? = nil
+    var compact = false
+    @Binding var isOn: Bool
+    var body: some View {
+        HStack(spacing: 10) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: compact ? 15 : 18))
+                    .foregroundStyle(isOn ? WorkStyle.blue : WorkStyle.muted).frame(width: 22)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: compact ? 12 : 13, weight: .medium))
+                if let detail { Text(detail).font(.system(size: compact ? 10 : 11)).foregroundStyle(WorkStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true) }
+            }
+            Spacer(minLength: 12)
+            Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
+                .accessibilityLabel(title).accessibilityHint(detail ?? "")
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
