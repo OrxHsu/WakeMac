@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+.swiftpm/
+DerivedData/
+dist/
+*.log
+.env
+.env.*
+# Local development history and machine-specific verification records.
+docs/

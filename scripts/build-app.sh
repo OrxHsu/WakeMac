@@ -1,0 +1,15 @@
+#!/bin/zsh
+set -euo pipefail
+PROJECT_DIR="${0:A:h:h}"
+BUILD_DIR="${WAKEMAC_BUILD_DIR:-/tmp/wakemac-build}"
+OUTPUT_DIR="${WAKEMAC_OUTPUT_DIR:-/tmp/wakemac-dist}"
+cd "$PROJECT_DIR"
+swift build -c release --scratch-path "$BUILD_DIR"
+APP="$OUTPUT_DIR/WakeMac.app"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BUILD_DIR/release/WakeMac" "$APP/Contents/MacOS/WakeMac"
+cp "$PROJECT_DIR/Info.plist" "$APP/Contents/Info.plist"
+cp "$PROJECT_DIR/Assets/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+codesign --force --options runtime --sign "${WAKEMAC_SIGN_IDENTITY:--}" --entitlements "$PROJECT_DIR/WakeMac.entitlements" "$APP"
+codesign --verify --strict "$APP"
+printf '%s\n' "$APP"
