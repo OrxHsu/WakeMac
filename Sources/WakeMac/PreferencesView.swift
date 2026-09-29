@@ -1,15 +1,16 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
-import WakeMacPower
+import WakeMacCore
 
 private enum PreferencePage: String, CaseIterable {
-    case automation = "自动收尾", command = "命令任务", settings = "偏好设置", history = "运行记录"
+    case power = "工作模式", automation = "自动收尾", command = "命令任务", settings = "偏好设置", history = "运行记录"
     var icon: String {
-        switch self { case .automation: "timer"; case .command: "terminal"; case .settings: "slider.horizontal.3"; case .history: "clock.arrow.circlepath" }
+        switch self { case .power: "sun.max"; case .automation: "timer"; case .command: "terminal"; case .settings: "slider.horizontal.3"; case .history: "clock.arrow.circlepath" }
     }
     var subtitle: String {
         switch self {
+        case .power: "保持唤醒，合盖继续；工作结束后安心休眠。"
         case .automation: "让工作按时结束，也照顾好电量。"
         case .command: "交给它一条命令，完成后安心休息。"
         case .settings: "按你的习惯，安排每一次切换。"
@@ -23,21 +24,13 @@ struct PreferencesView: View {
     @ObservedObject var hotkeys: GlobalHotKeys
     let notifier: LocalNotifier
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var page = PreferencePage.automation
+    @State private var page = PreferencePage.power
     @State private var date = Date().addingTimeInterval(3600)
     @State private var command = ""
     @State private var directory = FileManager.default.homeDirectoryForCurrentUser.path
     @State private var shortcutDraft = ShortcutBinding.defaults
     @State private var shortcutEnabled = true
     @State private var notificationMessage = ""
-    @State private var helperMessage = ""
-    private var helperStatus: String {
-        switch SMAppService.daemon(plistName: PowerService.plistName).status {
-        case .enabled: "系统服务已批准"
-        case .requiresApproval: "等待系统批准"
-        default: "系统服务尚未启用"
-        }
-    }
     private var canSchedule: Bool { !model.busy && model.active != nil && model.active != .normal }
 
     var body: some View {
@@ -51,6 +44,7 @@ struct PreferencesView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch page {
+                        case .power: powerTab
                         case .automation: timerTab
                         case .command: taskTab
                         case .settings: settingsTab
@@ -102,6 +96,51 @@ struct PreferencesView: View {
         }.frame(width: 174).frame(maxHeight: .infinity).background(WorkGlassBackground(radius: 22))
     }
 
+    private var powerTab: some View {
+        Group {
+            WorkCard(title: "运行控制", subtitle: model.headline) {
+                PowerControls(model: model)
+                WorkNote(text: "屏幕可以自动关闭，锁屏保护始终保留。", icon: "lock.shield")
+            }
+            WorkCard(title: "快捷模式") {
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(WorkMode.allCases, id: \.self) { mode in
+                        Button {
+                            model.quitWhenReady = false
+                            Task { await model.choose(mode) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack {
+                                    Image(systemName: mode.icon).font(.system(size: 19))
+                                    Spacer()
+                                    if model.active == mode { Image(systemName: "checkmark.circle.fill") }
+                                }.foregroundStyle(model.active == mode ? WorkStyle.blue : WorkStyle.muted)
+                                Text(mode.title).font(.system(size: 12, weight: .semibold))
+                                Text(mode == .background ? "保持唤醒\n合盖继续" : mode == .desk ? "保持唤醒\n允许合盖休眠" : "恢复闲置\n与合盖休眠")
+                                    .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                                .background(model.active == mode ? WorkStyle.selection : WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain).focusEffectDisabled()
+                            .disabled(model.busy || (mode == .background && model.helperStatus != .enabled))
+                            .accessibilityAddTraits(model.active == mode ? [.isSelected] : [])
+                    }
+                }
+            }
+            HStack {
+                WorkNote(text: model.display.lidClosed.map { $0 ? "上盖已合上" : "上盖已打开" } ?? "上盖状态未知", icon: "laptopcomputer")
+                Spacer()
+                Button("立即休眠") { Task { await model.choose(.normal, sleep: true) } }.disabled(model.busy)
+            }
+            if model.pending != nil || model.error {
+                WorkNote(text: model.message, icon: "exclamationmark.circle")
+                HStack {
+                    if model.pending != nil { Button("恢复锁屏保护", action: model.openLockSettings) }
+                    Button("重新检查") { model.error = false; Task { await model.refresh() } }
+                }
+            }
+        }
+    }
+
     private var timerTab: some View {
         Group {
             WorkCard(title: "定时恢复", subtitle: "到点恢复正常模式，让 Mac 可以自然休眠。") {
@@ -130,7 +169,7 @@ struct PreferencesView: View {
                         Button("取消", action: model.cancelTimer).buttonStyle(.plain)
                     }
                 } else if !canSchedule {
-                    WorkNote(text: "先在菜单栏选择后台或桌面工作，再设置定时。")
+                    WorkNote(text: "先在工作模式页或菜单栏开启保持唤醒，再设置定时。")
                 }
             }
             WorkCard(title: "低电量保护") {
@@ -222,41 +261,15 @@ struct PreferencesView: View {
     private var settingsTab: some View {
         Group {
             WorkCard(title: "合盖运行") {
-                Text(helperStatus).font(.system(size: 12, weight: .semibold))
-                Text("桌面工作直接使用原生保活。合盖继续运行需要启用 WakeMac 自带的系统服务，并在系统设置中批准一次。")
+                Text("合盖继续运行需要启用 WakeMac 自带的系统服务，并在系统设置中批准一次。")
                     .font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                 HStack {
-                    Button("启用合盖服务…") {
-                        let service = SMAppService.daemon(plistName: PowerService.plistName)
-                        do {
-                            _ = try PowerService.peerRequirement(identifier: PowerService.identifier)
-                            try service.register()
-                            helperMessage = "服务已登记，请在系统设置 → 通用 → 登录项与扩展中批准 WakeMac。"
-                            SMAppService.openSystemSettingsLoginItems()
-                        } catch {
-                            if service.status == .requiresApproval {
-                                helperMessage = "服务已登记，正在等待系统批准。请在登录项与扩展中开启 WakeMac。"
-                                SMAppService.openSystemSettingsLoginItems()
-                            } else { helperMessage = error.localizedDescription }
-                        }
-                    }.disabled(model.busy || SMAppService.daemon(plistName: PowerService.plistName).status == .enabled)
+                    Button(model.helperStatus == .requiresApproval ? "完成授权…" : "启用合盖服务…", action: model.enableHelper)
+                        .disabled(model.busy || model.helperStatus == .enabled)
                     Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
-                    Button("移除服务") {
-                        Task {
-                            await model.choose(.normal)
-                            guard model.active == .normal, !model.error, !model.busy else {
-                                helperMessage = "请先成功恢复正常休眠，再移除服务。"; return
-                            }
-                            do {
-                                try await SMAppService.daemon(plistName: PowerService.plistName).unregister()
-                                helperMessage = "合盖服务已移除。桌面工作仍可使用。"
-                            } catch { helperMessage = error.localizedDescription }
-                        }
-                    }.disabled(model.busy)
+                    Button("移除服务") { Task { await model.removeHelper() } }.disabled(model.busy)
                 }
-                if SMAppService.daemon(plistName: PowerService.plistName).status == .enabled {
-                    WorkNote(text: "授权已完成，可以选择后台工作。")
-                } else if !helperMessage.isEmpty { WorkNote(text: helperMessage) }
+                WorkNote(text: model.helperStatus == .enabled ? "合盖服务已授权，可以选择后台工作。" : model.helperMessage.isEmpty ? "合盖服务尚未授权。" : model.helperMessage)
                 WorkNote(text: "切换回正常模式或退出应用会恢复休眠；异常断线和心跳超时由服务自动恢复。")
             }
             WorkCard(title: "日常使用") {

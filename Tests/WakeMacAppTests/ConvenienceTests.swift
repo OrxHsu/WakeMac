@@ -24,6 +24,35 @@ actor AutomationBackend: ModeBackend {
     func removeLock() { lock = .off }
 }
 @MainActor final class ConvenienceTests: XCTestCase {
+    func testPowerSwitchesPreserveValidModesAndObservedState() async {
+        let backend = AutomationBackend(), m = model(backend)
+        await m.choose(.normal)
+        await m.setRunsWithLidClosed(true)
+        XCTAssertEqual(m.active, .background)
+        XCTAssertTrue(m.keepsAwake); XCTAssertTrue(m.runsWithLidClosed)
+        await m.setKeepsAwake(true)
+        XCTAssertEqual(m.active, .background)
+        await m.setRunsWithLidClosed(false)
+        XCTAssertEqual(m.active, .desk)
+        XCTAssertTrue(m.keepsAwake); XCTAssertFalse(m.runsWithLidClosed)
+        await m.setRunsWithLidClosed(true)
+        await m.setKeepsAwake(false)
+        XCTAssertEqual(m.active, .normal)
+        XCTAssertFalse(m.keepsAwake); XCTAssertFalse(m.runsWithLidClosed)
+        await m.setRunsWithLidClosed(false)
+        XCTAssertEqual(m.active, .normal)
+        await m.setKeepsAwake(true)
+        XCTAssertEqual(m.active, .desk)
+    }
+    func testPowerSwitchDoesNotClaimSuccessWithoutLockVerification() async {
+        let backend = AutomationBackend(), m = model(backend)
+        await m.refresh()
+        await backend.removeLock()
+        await m.setRunsWithLidClosed(true)
+        XCTAssertEqual(m.pending, .background)
+        XCTAssertNil(m.snapshot)
+        XCTAssertFalse(m.runsWithLidClosed)
+    }
     func model(_ backend: AutomationBackend) -> AppModel {
         AppModel(backend: backend, preferences: UserDefaults(suiteName: "WakeMacTests." + UUID().uuidString)!)
     }

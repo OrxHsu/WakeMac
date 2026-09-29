@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import ServiceManagement
 import WakeMacCore
+import WakeMacPower
 
 extension WorkMode {
     var title: String { switch self { case .background: "后台工作"; case .desk: "桌面工作"; case .normal: "正常休眠" } }
@@ -39,6 +40,7 @@ extension WorkMode {
     @Published var battery: BatteryReading?
     @Published var menuLabelEnabled = true
     @Published var convenienceMessage = ""
+    @Published var helperMessage = ""
     @Published var jobRunning = false
     @Published var jobStatus = "尚未启动命令"
     @Published var jobLogURL: URL?
@@ -69,6 +71,46 @@ extension WorkMode {
         if let pending { return pending.title + " · 等待系统设置" }
         if error { return "需要处理" }
         return active.map { $0.title + " · 已核验" } ?? "尚未选择模式"
+    }
+    var helperStatus: SMAppService.Status { SMAppService.daemon(plistName: PowerService.plistName).status }
+    var keepsAwake: Bool { snapshot?.idleSleepPrevented == true }
+    var runsWithLidClosed: Bool { snapshot?.backgroundLeaseActive == true && snapshot?.sleepDisabled == true }
+    func setKeepsAwake(_ enabled: Bool) async {
+        quitWhenReady = false
+        await choose(enabled ? (runsWithLidClosed ? .background : .desk) : .normal)
+    }
+    func setRunsWithLidClosed(_ enabled: Bool) async {
+        quitWhenReady = false
+        await choose(enabled ? .background : (keepsAwake ? .desk : .normal))
+    }
+    func enableHelper() {
+        let service = SMAppService.daemon(plistName: PowerService.plistName)
+        if service.status == .requiresApproval {
+            helperMessage = "请在登录项与扩展中批准 WakeMac 的后台服务。"
+            SMAppService.openSystemSettingsLoginItems()
+            return
+        }
+        do {
+            _ = try PowerService.peerRequirement(identifier: PowerService.identifier)
+            try service.register()
+            helperMessage = "服务已登记，请在登录项与扩展中批准 WakeMac。"
+            SMAppService.openSystemSettingsLoginItems()
+        } catch {
+            if service.status == .requiresApproval {
+                helperMessage = "请在登录项与扩展中批准 WakeMac 的后台服务。"
+                SMAppService.openSystemSettingsLoginItems()
+            } else { helperMessage = error.localizedDescription }
+        }
+    }
+    func removeHelper() async {
+        await choose(.normal)
+        guard active == .normal, !error, !busy else {
+            helperMessage = "请先成功恢复正常休眠，再移除服务。"; return
+        }
+        do {
+            try await SMAppService.daemon(plistName: PowerService.plistName).unregister()
+            helperMessage = "合盖服务已移除。桌面工作仍可使用。"
+        } catch { helperMessage = error.localizedDescription }
     }
     func refresh() async {
         guard !busy && refreshID == nil else { return }
@@ -202,9 +244,11 @@ extension WorkMode {
         panel.titlebarAppearsTransparent = false
         panel.titleVisibility = .visible
         panel.backgroundColor = .windowBackgroundColor
-        panel.title = "WakeMac"
+        panel.title = "WakeMac · 快捷面板"
         panel.isReleasedWhenClosed = false
-        panel.contentView = NSHostingView(rootView: ControlPanel(model: model, standalone: true))
+        let panelHost = NSHostingView(rootView: ControlPanel(model: model, standalone: true))
+        panelHost.sizingOptions = [.minSize, .intrinsicContentSize]
+        panel.contentView = panelHost
         panel.center()
         model.onUpdate = { [weak self] in self?.updateMenu() }
         model.showPanel = { [weak self] in self?.showPanel() }
@@ -231,7 +275,7 @@ extension WorkMode {
         }
         model.record("应用启动；恢复正常模式，不重放命令或定时任务。")
         updateMenu()
-        if !UserDefaults.standard.bool(forKey: "HasConfiguredMode") { showPanel() }
+        if !UserDefaults.standard.bool(forKey: "HasConfiguredMode") { showPreferences() }
         Task {
             if UserDefaults.standard.bool(forKey: "HasConfiguredMode") { await model.choose(.normal) }
             else { await model.refresh() }
@@ -243,7 +287,7 @@ extension WorkMode {
         // native control menu is tracking. A genuinely hung process still expires.
         if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPreferences(); return true }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if allowExit { return .terminateNow }
         // Cancel this termination attempt; issue a fresh one only after cleanup succeeds.
@@ -274,7 +318,7 @@ extension WorkMode {
     func showPreferences() {
         if preferencesWindow == nil {
             let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 780, height: 630), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "WakeMac · 设置"; window.isReleasedWhenClosed = false
+            window.title = "WakeMac"; window.isReleasedWhenClosed = false
             window.titlebarAppearsTransparent = false
             window.titleVisibility = .visible
             window.backgroundColor = .windowBackgroundColor

@@ -45,7 +45,7 @@ struct ControlPanel: View {
                         .frame(width: 28, height: 28).contentShape(Rectangle())
                 }.buttonStyle(.plain).foregroundStyle(WorkStyle.muted)
                     .workKeyboardFocus(radius: 8)
-                    .accessibilityLabel("设置与状态").help("设置与状态")
+                    .accessibilityLabel("打开主窗口").help("工作模式与设置")
             }.padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 22)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -62,7 +62,12 @@ struct ControlPanel: View {
                 }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
             }.padding(.horizontal, 24).padding(.bottom, 22)
 
-            VStack(spacing: 6) {
+            PowerControls(model: model, compact: true)
+                .padding(16)
+                .background(WorkStyle.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 16).padding(.bottom, 16)
+
+            VStack(spacing: 4) {
                 ForEach(WorkMode.allCases, id: \.self) { mode in modeRow(mode) }
             }.padding(.horizontal, 12)
 
@@ -116,7 +121,7 @@ struct ControlPanel: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: rowIcon(mode)).font(.system(size: 17, weight: .regular))
-                    .frame(width: 38, height: 38)
+                    .frame(width: 32, height: 32)
                     .foregroundStyle(selected ? WorkStyle.blue : WorkStyle.muted)
                     .background(selected ? WorkStyle.blue.opacity(0.13) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 5) {
@@ -127,7 +132,7 @@ struct ControlPanel: View {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16)).foregroundStyle(selected ? WorkStyle.blue : WorkStyle.line)
             }.foregroundStyle(WorkStyle.ink)
-                .padding(.horizontal, 12).padding(.vertical, 12)
+                .padding(.horizontal, 12).padding(.vertical, 9)
                 .background(selected ? WorkStyle.blue.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(selected ? WorkStyle.blue.opacity(0.14) : Color.clear))
                 .contentShape(RoundedRectangle(cornerRadius: 16))
