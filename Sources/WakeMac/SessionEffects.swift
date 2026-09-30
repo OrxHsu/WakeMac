@@ -8,6 +8,22 @@ struct SessionEffectChoices: Equatable {
     var preventScreenSaver = false
     var moveCursor = false
     var driveAlive = false
+    var mouseMovementIntervalSeconds: Double = 60
+    var mouseOnlyWhenIdle = true
+    var mouseIdleThresholdSeconds: Double = 60
+    var mouseStopAfterIdleSeconds: Double? = nil
+    var diskAccessIntervalSeconds: Double = 60
+}
+
+enum SessionEffectTiming {
+    static func interval(_ value: Double) -> TimeInterval { value.isFinite ? min(max(value, 1), 86400) : 60 }
+    static func due(last: Date?, now: Date, interval: Double) -> Bool {
+        guard let last else { return true }
+        return now.timeIntervalSince(last) >= Self.interval(interval)
+    }
+    static func idleEnough(_ idleSeconds: TimeInterval, interval: Double) -> Bool {
+        idleSeconds.isFinite && idleSeconds >= Self.interval(interval)
+    }
 }
 struct SessionEffectReport: Equatable {
     var display = "未启用"
@@ -36,6 +52,12 @@ struct SessionEffectReport: Equatable {
     private var forcedLocked = false
     // Unavailable/off-console session information is treated as locked. This read cannot unlock a session.
     var unlockedProvider: () -> Bool = NativeSessionEffects.isUnlocked
+    var screenSaverActiveProvider: () -> Bool? = NativeSessionEffects.isScreenSaverActive
+    var accessibilityProvider: () -> Bool = AXIsProcessTrusted
+    var idleSecondsProvider: () -> TimeInterval = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!) }
+    // Injection never prompts for a permission or emits a real pointer event in tests.
+    var cursorMovement: (() -> Bool)?
+    var drivePulse: (([URL]) async -> [String: String])?
 
     init() {
         lockObserver = DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
@@ -73,21 +95,30 @@ struct SessionEffectReport: Equatable {
         }
         if choices.moveCursor {
             if !unlocked { report.cursor = "已锁定或状态未知，鼠标移动已暂停" }
-            else if !AXIsProcessTrusted() { report.cursor = "需要在系统设置中授予辅助功能权限" }
-            else if lastCursorPulse == nil || now.timeIntervalSince(lastCursorPulse!) >= 60 {
-                report.cursor = nudgeCursor() ? "每分钟微移鼠标，仅在已解锁时" : "无法移动鼠标"
+            else if screenSaverActiveProvider() != false { report.cursor = "屏保正在运行或状态未知，鼠标移动已暂停" }
+            else if !accessibilityProvider() { report.cursor = "需要在系统设置中授予辅助功能权限" }
+            else if let stopAfter = choices.mouseStopAfterIdleSeconds, !Self.idleBelowStop(idleSecondsProvider(), stopAfter: stopAfter) {
+                report.cursor = "达到停止移动的闲置时长，鼠标移动已暂停"
+            } else if choices.mouseOnlyWhenIdle && !SessionEffectTiming.idleEnough(idleSecondsProvider(), interval: choices.mouseIdleThresholdSeconds) {
+                report.cursor = "等待连续闲置达到所设起始时长"
+            } else if SessionEffectTiming.due(last: lastCursorPulse, now: now, interval: choices.mouseMovementIntervalSeconds) {
+                // Recheck the console session directly before the effect, including injected tests.
+                let moved = !forcedLocked && unlockedProvider() && (cursorMovement?() ?? nudgeCursor())
+                report.cursor = moved ? "按所设间隔微移指针，保留系统闲置计时" : "无法移动鼠标"
                 lastCursorPulse = now
-            } else { report.cursor = "每分钟微移鼠标，仅在已解锁时" }
+            } else { report.cursor = "等待下一次鼠标移动间隔" }
         } else { lastCursorPulse = nil }
         if choices.driveAlive {
             let selected = Set(directories.map(\.path))
             driveReports = driveReports.filter { selected.contains($0.key) }
             for directory in directories where driveReports[directory.path] == nil { driveReports[directory.path] = "等待本地磁盘核验" }
-            if driveTask == nil, lastDrivePulse == nil || now.timeIntervalSince(lastDrivePulse!) >= 60 {
+            if driveTask == nil, SessionEffectTiming.due(last: lastDrivePulse, now: now, interval: choices.diskAccessIntervalSeconds) {
                 lastDrivePulse = now
-                let token = generation, worker = driveWorker
+                let token = generation, worker = driveWorker, pulse = drivePulse
                 driveTask = Task { [weak self] in
-                    let results = await worker.pulse(directories: directories)
+                    let results: [String: String]
+                    if let pulse { results = await pulse(directories) }
+                    else { results = await worker.pulse(directories: directories) }
                     guard !Task.isCancelled, let self, self.generation == token else { return }
                     self.driveReports = results; self.driveTask = nil
                 }
@@ -135,11 +166,28 @@ struct SessionEffectReport: Equatable {
         let current = probe.location
         var shifted = CGPoint(x: current.x + 1, y: current.y)
         if !NSScreen.screens.contains(where: { NSMouseInRect(shifted, $0.frame, false) }) { shifted.x = current.x - 1 }
-        guard let event = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: shifted, mouseButton: .left) else { return false }
-        event.post(tap: .cghidEventTap)
-        // A second check avoids emitting another event after an observed lock.
-        if !forcedLocked, unlockedProvider(), let restore = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: current, mouseButton: .left) { restore.post(tap: .cghidEventTap) }
+        // Warp moves the pointer without posting an input event. It therefore
+        // preserves the user's real idle time for start/stop thresholds and does
+        // not imitate typing, dismiss a saver, or reset the lock idle clock.
+        guard CGWarpMouseCursorPosition(shifted) == .success else { return false }
+        // Restore only if the pointer still occupies our own shifted position;
+        // physical movement between the two calls must retain ownership.
+        if !forcedLocked, unlockedProvider(), CGEvent(source: nil)?.location == shifted {
+            return CGWarpMouseCursorPosition(current) == .success
+        }
         return true
+    }
+    private static func idleBelowStop(_ idle: Double, stopAfter: Double) -> Bool {
+        idle.isFinite && idle >= 0 && idle < SessionEffectTiming.interval(stopAfter)
+    }
+    nonisolated static func isScreenSaverActive() -> Bool? {
+        // The engine's presence is conservative: if it remains resident, mouse
+        // movement stays paused. Unsupported/incomplete inventories stay unknown.
+        let path = "/System/Library/CoreServices/ScreenSaverEngine.app/Contents/MacOS/ScreenSaverEngine"
+        let canonical = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
+        let snapshot = ProcessDiscovery.snapshot()
+        if snapshot.processes.contains(where: { $0.executablePath == canonical }) { return true }
+        return snapshot.isComplete ? false : nil
     }
     nonisolated static func isUnlocked() -> Bool {
         guard let session = CGSessionCopyCurrentDictionary() as? [String: Any],
@@ -198,4 +246,88 @@ actor SessionDriveWorker {
             return values.volumeIsRemovable == true ? "已同步 · 可移除磁盘 · 不阻止手动弹出" : "已同步 · 本地磁盘"
         } catch { return "目录不可访问或磁盘已卸载" }
     }
+}
+
+/// Optional progress published through Foundation's public per-file channel.
+/// This never reads Safari history, private plists, source URLs, or credentials.
+typealias SessionProgressUnpublishingHandler = @Sendable () -> Void
+typealias SessionProgressPublishingHandler = @Sendable (Progress) -> SessionProgressUnpublishingHandler?
+
+@MainActor final class SessionDownloadProgressObserver {
+    var addSubscriber: (URL, @escaping SessionProgressPublishingHandler) -> Any = { url, handler in
+        Progress.addSubscriber(forFileURL: url, withPublishingHandler: handler)
+    }
+    var removeSubscriber: (Any) -> Void = { Progress.removeSubscriber($0) }
+    private var subscribers: [Any] = []
+    private var observations: [ObjectIdentifier: [NSKeyValueObservation]] = [:]
+    private var progresses: [ObjectIdentifier: Progress] = [:]
+    private var expectedPaths = Set<String>()
+    private var generation = UUID()
+    private var update: ((Double?) -> Void)?
+
+    func start(urls: [URL], update: @escaping (Double?) -> Void) {
+        stop()
+        self.update = update
+        expectedPaths = Set(urls.map { $0.standardizedFileURL.resolvingSymlinksInPath().path })
+        let token = generation
+        for url in urls {
+            let subscriber = addSubscriber(url) { [weak self] progress in
+                MainActor.assumeIsolated {
+                    guard let self, self.generation == token else { return nil }
+                    self.accept(progress, token: token)
+                    let id = ObjectIdentifier(progress)
+                    return { [weak self] in
+                        MainActor.assumeIsolated {
+                            guard let self, self.generation == token else { return }
+                            self.observations.removeValue(forKey: id)
+                            self.progresses.removeValue(forKey: id)
+                            self.report()
+                        }
+                    }
+                }
+            }
+            subscribers.append(subscriber)
+        }
+    }
+    func stop() {
+        generation = UUID(); update = nil; observations = [:]; progresses = [:]; expectedPaths = []
+        let owned = subscribers; subscribers = []
+        for subscriber in owned { removeSubscriber(subscriber) }
+    }
+    private func accept(_ progress: Progress, token: UUID) {
+        guard Self.matchesDownload(progress, expectedPaths: expectedPaths) else { return }
+        let id = ObjectIdentifier(progress)
+        progresses[id] = progress
+        observations[id] = [
+            progress.observe(\.fractionCompleted, options: [.initial, .new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token else { return }
+                    self.report()
+                }
+            },
+            progress.observe(\.isCancelled, options: [.new]) { [weak self] _, _ in
+                Task { @MainActor [weak self] in
+                    guard let self, self.generation == token else { return }
+                    self.report()
+                }
+            }
+        ]
+    }
+    private func report() {
+        let values = progresses.values.compactMap { Self.percent($0, expectedPaths: expectedPaths) }
+        // Multiple independent publishers for the same file cannot supply one
+        // reliable percentage, so ambiguity remains unavailable.
+        update?(values.count == 1 ? values.first : nil)
+    }
+    static func matchesDownload(_ progress: Progress, expectedPaths: Set<String>) -> Bool {
+        guard progress.kind == .file, progress.fileOperationKind == .downloading, let url = progress.fileURL else { return false }
+        return expectedPaths.contains(url.standardizedFileURL.resolvingSymlinksInPath().path)
+    }
+    static func percent(_ progress: Progress, expectedPaths: Set<String>) -> Double? {
+        guard matchesDownload(progress, expectedPaths: expectedPaths),
+              !progress.isIndeterminate, !progress.isCancelled, progress.totalUnitCount > 0,
+              progress.fractionCompleted.isFinite, (0...1).contains(progress.fractionCompleted) else { return nil }
+        return progress.fractionCompleted * 100
+    }
+    deinit { for subscriber in subscribers { removeSubscriber(subscriber) } }
 }

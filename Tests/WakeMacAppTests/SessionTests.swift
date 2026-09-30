@@ -17,6 +17,84 @@ import WakeMacCore
     private func controller(_ effects: TestSessionEffects) -> SessionController {
         SessionController(preferences: UserDefaults(suiteName: "SessionTests." + UUID().uuidString)!, effects: effects)
     }
+    func testProcessSessionWaitsThroughUnknownAndEndsSelectedIdentityOnce() async {
+        let e = TestSessionEffects(), c = controller(e)
+        let identity = NativeProcessIdentity(pid: 123, startedSeconds: 100, startedMicroseconds: 2)
+        var presence: NativeProcessReading = .running, endings = 0
+        c.endCondition = .process; c.selectedProcess = .init(identity: identity, name: "worker", executablePath: "/tmp/worker")
+        c.processProbe = { value in XCTAssertEqual(value, identity); return presence }
+        c.workingProvider = { true }; c.onBegin = { _ in true }; c.onEnd = { XCTAssertFalse(e.active); endings += 1 }
+        await c.start(); XCTAssertTrue(c.isActive)
+        presence = .unavailable; await c.tick(now: Date()); XCTAssertTrue(c.isActive); XCTAssertEqual(endings, 0)
+        presence = .exited; await c.tick(now: Date()); await c.tick(now: Date())
+        XCTAssertFalse(c.isActive); XCTAssertEqual(endings, 1)
+    }
+    func testExtendPreservesExistingDeadlineAndRejectsExpiredOrUntimedPlans() async {
+        let e = TestSessionEffects(), c = controller(e), now = Date()
+        c.workingProvider = { true }; c.onBegin = { _ in true }
+        var extended: [Double] = []
+        c.onExtended = { extended.append($0) }
+        XCTAssertFalse(c.extend(minutes: 15, now: now)); XCTAssertTrue(extended.isEmpty)
+        c.endCondition = .duration; c.durationMinutes = 1; await c.start(now: now)
+        XCTAssertTrue(c.extend(minutes: 15, now: now.addingTimeInterval(10)))
+        XCTAssertEqual(c.deadline, now.addingTimeInterval(960))
+        XCTAssertFalse(c.extend(minutes: .nan, now: now)); XCTAssertFalse(c.extend(minutes: 10081, now: now))
+        XCTAssertEqual(c.deadline, now.addingTimeInterval(960))
+        await c.tick(now: now.addingTimeInterval(60)); XCTAssertTrue(c.isActive)
+        XCTAssertFalse(c.extend(minutes: 1, now: now.addingTimeInterval(960)))
+        c.manualModeChanged(); c.endCondition = .untilDate; c.endDate = now.addingTimeInterval(120)
+        await c.start(now: now); XCTAssertTrue(c.extend(minutes: 1, now: now))
+        XCTAssertEqual(c.deadline, now.addingTimeInterval(180)); XCTAssertEqual(c.endDate, c.deadline)
+        c.manualModeChanged(); c.endCondition = .indefinite; await c.start(now: now)
+        XCTAssertFalse(c.extend(minutes: 15, now: now))
+        XCTAssertEqual(extended, [15, 1])
+    }
+    func testSavedSessionConfigurationNeverReplaysActiveStateAndIntervalsDoNotRecurse() async {
+        let prefs = UserDefaults(suiteName: "SessionTests." + UUID().uuidString)!
+        let c = SessionController(preferences: prefs, effects: TestSessionEffects())
+        c.endCondition = .duration; c.durationMinutes = 45
+        c.downloadStabilitySeconds = 120; c.downloadStabilitySeconds = 120
+        c.mouseMovementIntervalSeconds = 5; c.mouseIdleThresholdSeconds = 60; c.mouseOnlyWhenIdle = false
+        c.mouseStopAfterIdleSeconds = 1200; c.diskAccessIntervalSeconds = 15
+        c.screenSaverExceptionBundleIDs = ["com.test.editor"]
+        c.workingProvider = { true }; c.onBegin = { _ in true }; await c.start()
+        let restored = SessionController(preferences: prefs, effects: TestSessionEffects())
+        XCTAssertFalse(restored.isActive); XCTAssertNil(restored.deadline); XCTAssertNil(restored.selectedProcess)
+        XCTAssertEqual(restored.endCondition, .duration); XCTAssertEqual(restored.durationMinutes, 45)
+        XCTAssertEqual(restored.downloadStabilitySeconds, 120); XCTAssertEqual(restored.mouseMovementIntervalSeconds, 5)
+        XCTAssertEqual(restored.mouseIdleThresholdSeconds, 60); XCTAssertFalse(restored.mouseOnlyWhenIdle)
+        XCTAssertEqual(restored.mouseStopAfterIdleSeconds, 1200); XCTAssertEqual(restored.diskAccessIntervalSeconds, 15)
+        XCTAssertEqual(restored.screenSaverExceptionBundleIDs, ["com.test.editor"])
+        c.diskAccessIntervalSeconds = 0; XCTAssertEqual(c.diskAccessIntervalSeconds, 1)
+        c.mouseIdleThresholdSeconds = .infinity; XCTAssertEqual(c.mouseIdleThresholdSeconds, 60)
+        c.mouseStopAfterIdleSeconds = .nan; XCTAssertNil(c.mouseStopAfterIdleSeconds)
+    }
+    func testRuntimeOverridesAndSaverExceptionsKeepSavedPreventionIndependent() {
+        let e = TestSessionEffects(), c = controller(e)
+        c.preventDisplaySleep = false; c.preventScreenSaver = true
+        c.setDisplayPrevention(true); XCTAssertTrue(c.choices.preventDisplaySleep); XCTAssertFalse(c.preventDisplaySleep)
+        c.setScreenSaverPrevention(false); XCTAssertFalse(c.effectivePreventScreenSaver); XCTAssertTrue(c.preventScreenSaver)
+        c.effectOverrides = nil; XCTAssertFalse(c.effectivePreventDisplaySleep); XCTAssertTrue(c.effectivePreventScreenSaver)
+        var reading: SessionApplicationReading = .running([1])
+        var working = true
+        c.workingProvider = { working }; c.screenSaverExceptionBundleIDs = ["com.test.editor"]
+        c.screenSaverExceptionProbe = { _ in reading }
+        XCTAssertTrue(c.screenSaverExceptionActive); XCTAssertTrue(c.effectivePreventScreenSaver)
+        reading = .absent; XCTAssertFalse(c.screenSaverExceptionActive)
+        reading = .unavailable; XCTAssertTrue(c.screenSaverExceptionActive)
+        working = false; XCTAssertFalse(c.screenSaverExceptionActive)
+    }
+    func testConfiguredDownloadStabilityPeriodRequiresActualProgress() async {
+        let e = TestSessionEffects(), c = controller(e), now = Date()
+        var bytes: Int64 = 100
+        c.endCondition = .download; c.downloadURL = URL(fileURLWithPath: "/tmp/test.bin"); c.downloadStabilitySeconds = 120
+        c.downloadProbe = { _ in .file(.init(bytes: bytes, modified: now, identity: 1)) }
+        c.workingProvider = { true }; c.onBegin = { _ in true }
+        await c.start(now: now); await c.tick(now: now.addingTimeInterval(500)); XCTAssertTrue(c.isActive)
+        bytes = 200; await c.tick(now: now.addingTimeInterval(501))
+        await c.tick(now: now.addingTimeInterval(620)); XCTAssertTrue(c.isActive)
+        await c.tick(now: now.addingTimeInterval(621)); XCTAssertFalse(c.isActive)
+    }
     func testDurationEndsOnceAndReleasesEffectsBeforeEndCallback() async {
         let e = TestSessionEffects(), c = controller(e), now = Date()
         var working = false, endings = 0
@@ -189,6 +267,87 @@ import WakeMacCore
 }
 
 @MainActor final class SessionNativeEffectsTests: XCTestCase {
+    func testProgressSubscriptionHandlesInitiallyUnknownFractionAndDropsLateUpdatesAfterStop() async {
+        let observer = SessionDownloadProgressObserver()
+        let file = URL(fileURLWithPath: "/tmp/progress-test.bin")
+        var handler: SessionProgressPublishingHandler?, removals = 0
+        observer.addSubscriber = { url, received in XCTAssertEqual(url, file); handler = received; return NSObject() }
+        observer.removeSubscriber = { _ in removals += 1 }
+        let known = expectation(description: "native published fraction becomes available")
+        let cancelled = expectation(description: "cancelled publisher no longer supplies a percentage")
+        var values: [Double?] = [], fulfilled = false, cancellationRequested = false, cancellationReported = false
+        observer.start(urls: [file]) { value in
+            values.append(value)
+            if value == 25 && !fulfilled { fulfilled = true; known.fulfill() }
+            if cancellationRequested && value == nil && !cancellationReported { cancellationReported = true; cancelled.fulfill() }
+        }
+        let progress = Progress(totalUnitCount: -1)
+        progress.kind = .file; progress.fileOperationKind = .downloading; progress.fileURL = file
+        let unpublish = handler?(progress)
+        progress.totalUnitCount = 100; progress.completedUnitCount = 25
+        await fulfillment(of: [known], timeout: 1)
+        XCTAssertEqual(values.last ?? nil, 25)
+        cancellationRequested = true; progress.cancel()
+        await fulfillment(of: [cancelled], timeout: 1)
+        XCTAssertNil(values.last ?? nil)
+        observer.stop(); XCTAssertEqual(removals, 1)
+        let count = values.count
+        progress.completedUnitCount = 75; unpublish?()
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(values.count, count)
+    }
+    func testDownloadPercentageRequiresExactPublishedDownloadingMetadata() {
+        let file = URL(fileURLWithPath: "/tmp/progress-test.bin")
+        let expected: Set<String> = [file.path]
+        let progress = Progress(totalUnitCount: 100)
+        progress.kind = .file; progress.fileOperationKind = .downloading; progress.fileURL = file; progress.completedUnitCount = 25
+        XCTAssertEqual(SessionDownloadProgressObserver.percent(progress, expectedPaths: expected), 25)
+        progress.fileURL = URL(fileURLWithPath: "/tmp/other-file.bin")
+        XCTAssertNil(SessionDownloadProgressObserver.percent(progress, expectedPaths: expected))
+        progress.fileURL = file; progress.fileOperationKind = .copying
+        XCTAssertNil(SessionDownloadProgressObserver.percent(progress, expectedPaths: expected))
+        progress.fileOperationKind = .downloading; progress.totalUnitCount = -1
+        XCTAssertTrue(SessionDownloadProgressObserver.matchesDownload(progress, expectedPaths: expected))
+        XCTAssertNil(SessionDownloadProgressObserver.percent(progress, expectedPaths: expected))
+        progress.totalUnitCount = 100; progress.cancel()
+        XCTAssertNil(SessionDownloadProgressObserver.percent(progress, expectedPaths: expected))
+    }
+    func testMouseIntervalIdleStartStopAndSaverPauseWithoutSendingEvents() {
+        let effects = NativeSessionEffects(), now = Date()
+        var idle = 50.0, moves = 0
+        var saver: Bool? = false
+        effects.unlockedProvider = { true }; effects.accessibilityProvider = { true }
+        effects.screenSaverActiveProvider = { saver }; effects.idleSecondsProvider = { idle }
+        effects.cursorMovement = { moves += 1; return true }
+        var choices = SessionEffectChoices(moveCursor: true, mouseMovementIntervalSeconds: 5, mouseOnlyWhenIdle: true, mouseIdleThresholdSeconds: 60, mouseStopAfterIdleSeconds: 120)
+        _ = effects.update(working: true, choices: choices, directories: [], now: now); XCTAssertEqual(moves, 0)
+        idle = 60; _ = effects.update(working: true, choices: choices, directories: [], now: now); XCTAssertEqual(moves, 1)
+        idle = 90; _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(4)); XCTAssertEqual(moves, 1)
+        _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(5)); XCTAssertEqual(moves, 2)
+        idle = 120; _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(10)); XCTAssertEqual(moves, 2)
+        idle = 90; saver = true; _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(15)); XCTAssertEqual(moves, 2)
+        saver = nil; _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(20)); XCTAssertEqual(moves, 2)
+        saver = false; choices.mouseOnlyWhenIdle = false; idle = 0
+        _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(25)); XCTAssertEqual(moves, 3)
+        effects.unlockedProvider = { false }
+        _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(30)); XCTAssertEqual(moves, 3)
+        effects.release()
+    }
+    func testDiskIntervalUsesConfiguredCadenceAndStopsWhenWorkUnverified() async {
+        let effects = NativeSessionEffects(), now = Date()
+        var pulses = 0
+        effects.unlockedProvider = { false }
+        effects.drivePulse = { _ in pulses += 1; return [:] }
+        let choices = SessionEffectChoices(driveAlive: true, diskAccessIntervalSeconds: 10)
+        _ = effects.update(working: true, choices: choices, directories: [], now: now)
+        for _ in 0..<100 where pulses == 0 { await Task.yield() }
+        XCTAssertEqual(pulses, 1)
+        _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(9)); await Task.yield(); XCTAssertEqual(pulses, 1)
+        _ = effects.update(working: true, choices: choices, directories: [], now: now.addingTimeInterval(10))
+        for _ in 0..<100 where pulses < 2 { await Task.yield() }
+        XCTAssertEqual(pulses, 2)
+        _ = effects.update(working: false, choices: choices, directories: [], now: now.addingTimeInterval(20)); await Task.yield(); XCTAssertEqual(pulses, 2)
+    }
     func testDrivePulseOnlyLeavesTheUsersOriginalFiles() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("SessionDrive." + UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

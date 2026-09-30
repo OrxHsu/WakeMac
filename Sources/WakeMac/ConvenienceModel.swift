@@ -93,6 +93,7 @@ extension AppModel {
             }
         }
         await tickFeatures(now: date, battery: reading)
+        tickBehavior(now: date)
     }
     func startJob(command: String, directory: String) async {
         guard !jobRunning, !busy else { return }

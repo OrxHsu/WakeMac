@@ -13,6 +13,8 @@ import Darwin
 struct TriggerDevice: Equatable { var id: String; var name: String }
 struct TriggerSuggestion: Identifiable, Equatable { var id: String; var title: String; var value: String }
 struct TriggerSnapshot {
+    var observedAt: Date?
+    var connectedDisplay: Bool?
     var externalDisplay: Bool?
     var displayMirroring: Bool?
     var usbDevices: [TriggerDevice]?
@@ -20,6 +22,8 @@ struct TriggerSnapshot {
     var runningApps: Set<String>?
     var runningAppChoices: [TriggerDevice]?
     var frontmostApp: String?
+    var processes: [TriggerDevice]?
+    var processListComplete: Bool?
     var batteryPercent: Int?
     var batteryCharging: Bool?
     var acConnected: Bool?
@@ -43,6 +47,7 @@ struct TriggerSnapshot {
         case .mountedVolume: devices = mountedVolumes ?? []
         case .appRunning, .appFrontmost:
             devices = runningAppChoices ?? (runningApps ?? []).sorted().map { .init(id: $0, name: $0) }
+        case .processRunning: devices = processes ?? []
         case .wifiSSID: devices = wifiSSID.map { [.init(id: $0, name: $0)] } ?? []
         case .ipAddress: devices = (ipAddresses ?? []).sorted().map { .init(id: $0, name: $0) }
         case .dnsServer: devices = (dnsServers ?? []).sorted().map { .init(id: $0, name: $0) }
@@ -57,18 +62,30 @@ struct TriggerSnapshot {
         }.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
-    func evaluate(_ condition: TriggerCondition) -> TriggerConditionResult {
+    func evaluate(_ condition: TriggerCondition, now: Date? = nil, calendar: Calendar = TriggerWeeklySchedule.localCalendar) -> TriggerConditionResult {
         if let error = condition.validationError { return .init(state: .unknown, detail: error) }
         let value = condition.value.trimmingCharacters(in: .whitespacesAndNewlines)
         let result: Bool?
         let detail: String
         switch condition.kind {
-        case .externalDisplay: result = externalDisplay; detail = externalDisplay == true ? "已连接外接显示器" : "没有外接显示器"
+        case .externalDisplay:
+            result = condition.ignoreBuiltInDisplay ? externalDisplay : connectedDisplay
+            detail = condition.ignoreBuiltInDisplay ? (externalDisplay == true ? "已连接外接显示器" : "没有外接显示器") : (connectedDisplay == true ? "已连接显示器（包括内建）" : "没有已连接显示器")
         case .displayMirroring: result = displayMirroring; detail = displayMirroring == true ? "正在镜像" : "没有镜像"
         case .usbDevice: result = usbDevices.map { Self.contains($0, value) }; detail = Self.describe(usbDevices)
         case .bluetoothDevice: result = bluetoothDevices.map { Self.contains($0, value) }; detail = Self.describe(bluetoothDevices)
         case .appRunning: result = runningApps.map { $0.contains(value) }; detail = runningApps?.sorted().joined(separator: "、") ?? ""
         case .appFrontmost: result = frontmostApp.map { $0 == value }; detail = frontmostApp ?? ""
+        case .processRunning:
+            if let processes {
+                if processes.contains(where: { Self.normalizedProcessPath($0.id) == Self.normalizedProcessPath(value) }) { result = true }
+                else { result = processListComplete == true ? false : nil }
+            } else { result = nil }
+            detail = processes?.filter { Self.normalizedProcessPath($0.id) == Self.normalizedProcessPath(value) }.map(\.name).joined(separator: "、") ?? ""
+        case .weeklySchedule:
+            if let date = now ?? observedAt { result = condition.schedule?.matches(at: date, calendar: calendar) }
+            else { result = nil }
+            detail = (condition.schedule?.summary ?? "") + " · 当前当地时间"
         case .batteryCharging: result = batteryCharging; detail = batteryCharging == true ? "电池正在充电" : "电池未充电"
         case .batteryAbove: result = batteryPercent.flatMap { (0...100).contains($0) ? Double($0) > (Double(value) ?? .infinity) : nil }; detail = batteryPercent.map { "\($0)%" } ?? ""
         case .acConnected: result = acConnected; detail = acConnected == true ? "电源已连接" : "电源已断开"
@@ -86,6 +103,7 @@ struct TriggerSnapshot {
         guard let result else { return .init(state: .unknown, detail: unavailable[condition.kind] ?? "当前系统未提供此观测，条件不会匹配。") }
         return .init(state: result ? .matched : .unmatched, detail: detail.isEmpty ? "没有匹配的设备或应用" : detail)
     }
+    static func normalizedProcessPath(_ path: String) -> String { URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path }
     private static func contains(_ devices: [TriggerDevice], _ value: String) -> Bool {
         devices.contains { $0.id.caseInsensitiveCompare(value) == .orderedSame || $0.name.caseInsensitiveCompare(value) == .orderedSame }
     }
@@ -146,12 +164,14 @@ extension TriggerObservationSource {
     }
     func read(kinds: Set<TriggerKind>, now: Date) async -> TriggerSnapshot {
         var s = TriggerSnapshot()
+        s.observedAt = now
         if !kinds.isDisjoint(with: [.externalDisplay, .displayMirroring]) {
             var count: UInt32 = 0
             if CGGetOnlineDisplayList(0, nil, &count) == .success {
                 var displays = [CGDirectDisplayID](repeating: 0, count: Int(count))
                 if CGGetOnlineDisplayList(count, &displays, &count) == .success {
                     let ids = Array(displays.prefix(Int(count)))
+                    s.connectedDisplay = !ids.isEmpty
                     s.externalDisplay = ids.contains { CGDisplayIsBuiltin($0) == 0 }
                     s.displayMirroring = ids.contains { CGDisplayIsInMirrorSet($0) != 0 }
                 }
@@ -177,6 +197,19 @@ extension TriggerObservationSource {
                 return TriggerDevice(id: id, name: app.localizedName ?? id)
             }
             s.frontmostApp = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        }
+        if kinds.contains(.processRunning) {
+            let discovered = ProcessDiscovery.snapshot()
+            if discovered.isAvailable {
+                var seen = Set<String>()
+                s.processes = discovered.processes.compactMap { process in
+                    let path = TriggerSnapshot.normalizedProcessPath(process.executablePath)
+                    guard seen.insert(path).inserted else { return nil }
+                    return TriggerDevice(id: path, name: process.name)
+                }
+                s.processListComplete = discovered.isComplete
+                if !discovered.isComplete { s.unavailable[.processRunning] = "部分进程无法读取；未发现目标时无法确认进程已经退出。" }
+            } else { s.unavailable[.processRunning] = "系统未提供当前用户的完整进程观测。" }
         }
         if !kinds.isDisjoint(with: [.batteryCharging, .batteryAbove, .acConnected, .acDisconnected]) { readPower(into: &s) }
         if kinds.contains(.ipAddress) { s.ipAddresses = readIPs() }

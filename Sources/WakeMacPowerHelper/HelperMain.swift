@@ -1,4 +1,5 @@
 import Foundation
+import IOKit.ps
 import WakeMacCore
 import WakeMacPower
 
@@ -6,6 +7,15 @@ private final class SystemSleepSwitch: SleepSwitch {
     // A root-owned journal allows launchd's restarted helper to undo its own
     // setting after a crash. Never reset an unrelated pre-existing inhibitor.
     private let journal = URL(fileURLWithPath: "/var/db/local.orx.WakeMac.PowerLease")
+    func powerSource() -> SleepPowerSource? {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let source = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? else { return nil }
+        switch source {
+        case kIOPSACPowerValue: return .external
+        case kIOPSBatteryPowerValue: return .battery
+        default: return nil
+        }
+    }
     func read() throws -> Bool {
         let text = try CommandRunner.run("/usr/bin/pmset", ["-g"], timeout: 5)
         guard let disabled = SystemParsing.sleepDisabled(text) else { throw ModeError("无法读取系统防休眠状态。") }

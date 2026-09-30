@@ -4,7 +4,7 @@ import WakeMacCore
 
 /// Session plans are configuration only. Active sessions are deliberately never persisted.
 enum SessionEndCondition: String, CaseIterable, Identifiable {
-    case indefinite, duration, untilDate, application, download
+    case indefinite, duration, untilDate, application, process, download
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -12,6 +12,7 @@ enum SessionEndCondition: String, CaseIterable, Identifiable {
         case .duration: return "持续一段时间"
         case .untilDate: return "到指定时间"
         case .application: return "直到应用退出"
+        case .process: return "直到进程结束"
         case .download: return "直到文件下载完成"
         }
     }
@@ -25,12 +26,48 @@ struct SessionFileStamp: Equatable {
 }
 enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, unavailable }
 
+struct SessionBehaviorOverride: Equatable {
+    var display: Bool? = nil
+    var saver: Bool? = nil
+}
+
 @MainActor final class SessionController: ObservableObject {
-    @Published var endCondition: SessionEndCondition = .indefinite
-    @Published var durationMinutes: Double = 60
-    @Published var endDate = Date().addingTimeInterval(3600)
-    @Published var applicationURL: URL?
-    @Published var downloadURL: URL?
+    @Published var endCondition: SessionEndCondition = .indefinite { didSet { preferences.set(endCondition.rawValue, forKey: "session.endCondition") } }
+    @Published var durationMinutes: Double = 60 { didSet { if durationMinutes.isFinite, (1...10080).contains(durationMinutes) { preferences.set(durationMinutes, forKey: "session.durationMinutes") } } }
+    @Published var endDate = Date().addingTimeInterval(3600) { didSet { if endDate.timeIntervalSince1970.isFinite { preferences.set(endDate, forKey: "session.endDate") } } }
+    @Published var applicationURL: URL? { didSet { preferences.set(applicationURL?.path, forKey: "session.applicationPath") } }
+    @Published var downloadURL: URL? { didSet { preferences.set(downloadURL?.path, forKey: "session.downloadPath") } }
+    @Published var selectedProcess: DiscoveredProcess?
+    @Published private(set) var processChoices: [DiscoveredProcess] = []
+    @Published private(set) var processDiscoveryStatus = "点击刷新，读取当前用户的进程"
+    @Published var effectOverrides: SessionBehaviorOverride?
+    @Published var screenSaverExceptionBundleIDs: [String] = [] { didSet { preferences.set(screenSaverExceptionBundleIDs, forKey: "session.screenSaverExceptions") } }
+    @Published var downloadStabilitySeconds: Double = 30 { didSet {
+        let bounded = Self.validInterval(downloadStabilitySeconds, fallback: 30)
+        if bounded != downloadStabilitySeconds { downloadStabilitySeconds = bounded; return }
+        preferences.set(downloadStabilitySeconds, forKey: "session.downloadStabilitySeconds")
+    } }
+    @Published var mouseMovementIntervalSeconds: Double = 60 { didSet {
+        let bounded = Self.validInterval(mouseMovementIntervalSeconds, fallback: 60)
+        if bounded != mouseMovementIntervalSeconds { mouseMovementIntervalSeconds = bounded; return }
+        preferences.set(mouseMovementIntervalSeconds, forKey: "session.mouseMovementIntervalSeconds")
+    } }
+    @Published var mouseIdleThresholdSeconds: Double = 60 { didSet {
+        let bounded = Self.validInterval(mouseIdleThresholdSeconds, fallback: 60)
+        if bounded != mouseIdleThresholdSeconds { mouseIdleThresholdSeconds = bounded; return }
+        preferences.set(mouseIdleThresholdSeconds, forKey: "session.mouseIdleThresholdSeconds")
+    } }
+    @Published var mouseStopAfterIdleSeconds: Double? { didSet {
+        let bounded = mouseStopAfterIdleSeconds.flatMap { $0.isFinite ? Self.validInterval($0, fallback: 3600) : nil }
+        if bounded != mouseStopAfterIdleSeconds { mouseStopAfterIdleSeconds = bounded; return }
+        preferences.set(mouseStopAfterIdleSeconds, forKey: "session.mouseStopAfterIdleSeconds")
+    } }
+    @Published var mouseOnlyWhenIdle = true { didSet { preferences.set(mouseOnlyWhenIdle, forKey: "session.mouseOnlyWhenIdle") } }
+    @Published var diskAccessIntervalSeconds: Double = 60 { didSet {
+        let bounded = Self.validInterval(diskAccessIntervalSeconds, fallback: 60)
+        if bounded != diskAccessIntervalSeconds { diskAccessIntervalSeconds = bounded; return }
+        preferences.set(diskAccessIntervalSeconds, forKey: "session.diskAccessIntervalSeconds")
+    } }
     @Published var defaultMode: WorkMode = .desk { didSet { preferences.set(defaultMode == .background ? "background" : "desk", forKey: "session.defaultMode") } }
     @Published var preventDisplaySleep = false { didSet { saveChoices() } }
     @Published var preventScreenSaver = false { didSet { saveChoices() } }
@@ -43,14 +80,20 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
     @Published private(set) var status = "会话尚未开始"
     @Published private(set) var effectReport = SessionEffectReport()
     @Published private(set) var deadline: Date?
+    @Published private(set) var downloadProgressPercent: Double?
 
     var onBegin: ((WorkMode) async -> Bool)?
     var onEnd: (() async -> Void)?
+    var onExtended: ((Double) -> Void)?
     var workingProvider: (() -> Bool)?
     var applicationProbe: (URL) -> SessionApplicationReading = SessionController.readApplication
+    var screenSaverExceptionProbe: (String) -> SessionApplicationReading = SessionController.readRunningBundleIdentifier
+    var processProbe: (NativeProcessIdentity) -> NativeProcessReading = ProcessDiscovery.presence
+    var processDiscovery: () -> ProcessDiscoverySnapshot = ProcessDiscovery.snapshot
     var downloadProbe: (URL) -> SessionDownloadReading = SessionController.readDownload
     private let preferences: UserDefaults
     private let effects: SessionEffectManaging
+    private let downloadProgressObserver = SessionDownloadProgressObserver()
     private var generation = UUID()
     private var stopped = false
     private var plan: SessionPlan?
@@ -59,21 +102,72 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
     private var downloadStableSince: Date?
     private var downloadObservedURL: URL?
     private var downloadFinalBaseline: SessionDownloadReading?
-    private let stabilityPeriod: TimeInterval = 30
 
-    private enum SessionPlan { case indefinite, deadline(Date), application(URL), download(URL) }
+    private enum SessionPlan { case indefinite, deadline(Date), application(URL), process(DiscoveredProcess), download(URL) }
     init(preferences: UserDefaults, effects: SessionEffectManaging? = nil) {
         self.preferences = preferences
         self.effects = effects ?? NativeSessionEffects()
+        endCondition = preferences.string(forKey: "session.endCondition").flatMap(SessionEndCondition.init(rawValue:)) ?? .indefinite
+        let duration = preferences.object(forKey: "session.durationMinutes") as? Double ?? 60
+        durationMinutes = duration.isFinite && (1...10080).contains(duration) ? duration : 60
+        endDate = preferences.object(forKey: "session.endDate") as? Date ?? Date().addingTimeInterval(3600)
+        applicationURL = preferences.string(forKey: "session.applicationPath").map { URL(fileURLWithPath: $0) }
+        downloadURL = preferences.string(forKey: "session.downloadPath").map { URL(fileURLWithPath: $0) }
+        screenSaverExceptionBundleIDs = Array(Set(preferences.stringArray(forKey: "session.screenSaverExceptions") ?? [])).filter { !$0.isEmpty }.sorted()
         defaultMode = preferences.string(forKey: "session.defaultMode") == "background" ? .background : .desk
         preventDisplaySleep = preferences.bool(forKey: "session.preventDisplaySleep")
         preventScreenSaver = preferences.bool(forKey: "session.preventScreenSaver")
         driveAlive = preferences.bool(forKey: "session.driveAlive")
+        downloadStabilitySeconds = Self.validInterval(preferences.object(forKey: "session.downloadStabilitySeconds") as? Double ?? 30, fallback: 30)
+        mouseMovementIntervalSeconds = Self.validInterval(preferences.object(forKey: "session.mouseMovementIntervalSeconds") as? Double ?? 60, fallback: 60)
+        diskAccessIntervalSeconds = Self.validInterval(preferences.object(forKey: "session.diskAccessIntervalSeconds") as? Double ?? 60, fallback: 60)
+        mouseOnlyWhenIdle = preferences.object(forKey: "session.mouseOnlyWhenIdle") as? Bool ?? true
+        mouseIdleThresholdSeconds = Self.validInterval(preferences.object(forKey: "session.mouseIdleThresholdSeconds") as? Double ?? 60, fallback: 60)
+        if let stored = preferences.object(forKey: "session.mouseStopAfterIdleSeconds") as? Double, stored.isFinite { mouseStopAfterIdleSeconds = Self.validInterval(stored, fallback: 3600) }
         driveDirectories = (preferences.stringArray(forKey: "session.driveDirectories") ?? []).map { URL(fileURLWithPath: $0, isDirectory: true) }
     }
 
     var choices: SessionEffectChoices {
-        SessionEffectChoices(preventDisplaySleep: preventDisplaySleep, preventScreenSaver: preventScreenSaver, moveCursor: moveCursor, driveAlive: driveAlive)
+        SessionEffectChoices(preventDisplaySleep: effectivePreventDisplaySleep, preventScreenSaver: effectivePreventScreenSaver, moveCursor: moveCursor, driveAlive: driveAlive, mouseMovementIntervalSeconds: mouseMovementIntervalSeconds, mouseOnlyWhenIdle: mouseOnlyWhenIdle, mouseIdleThresholdSeconds: mouseIdleThresholdSeconds, mouseStopAfterIdleSeconds: mouseStopAfterIdleSeconds, diskAccessIntervalSeconds: diskAccessIntervalSeconds)
+    }
+    var effectivePreventDisplaySleep: Bool { effectOverrides?.display ?? preventDisplaySleep }
+    var effectivePreventScreenSaver: Bool { effectOverrides?.saver ?? preventScreenSaver }
+    var screenSaverExceptionActive: Bool {
+        guard workingProvider?() == true else { return false }
+        for identifier in screenSaverExceptionBundleIDs {
+            switch screenSaverExceptionProbe(identifier) {
+            case .running(let pids) where !pids.isEmpty: return true
+            case .unavailable: return true // Unknown activity must not start a saver over an exception app.
+            default: break
+            }
+        }
+        return false
+    }
+    func setDisplayPrevention(_ enabled: Bool) {
+        var value = effectOverrides ?? SessionBehaviorOverride(); value.display = enabled; effectOverrides = value
+    }
+    func setScreenSaverPrevention(_ enabled: Bool) {
+        var value = effectOverrides ?? SessionBehaviorOverride(); value.saver = enabled; effectOverrides = value
+    }
+    private static func validInterval(_ value: Double, fallback: Double) -> Double {
+        value.isFinite ? min(max(value, 1), 86400) : fallback
+    }
+    func refreshProcesses() {
+        let reading = processDiscovery()
+        processChoices = reading.processes
+        processDiscoveryStatus = !reading.isAvailable ? "无法读取进程列表，请重试" : reading.isComplete ? "已读取当前用户的 \(reading.processes.count) 个进程" : "已读取 \(reading.processes.count) 个进程；\(reading.unavailableCount) 个暂不可核验"
+    }
+    @discardableResult func extend(minutes: Double, now: Date = Date()) -> Bool {
+        guard minutes.isFinite, (1...10080).contains(minutes) else { status = "延长时长须为 1 分钟至 7 天"; return false }
+        guard !stopped, isActive, case .deadline(let current) = plan, current > now, workingProvider?() == true else {
+            status = "只有已核验且尚未到期的定时会话可以延长"; return false
+        }
+        let next = current.addingTimeInterval(minutes * 60)
+        guard next.timeIntervalSince1970.isFinite else { status = "延长后的时间无效"; return false }
+        plan = .deadline(next); deadline = next; endDate = next
+        status = sessionStatus(now: now)
+        onExtended?(minutes)
+        return true
     }
     private func saveChoices() {
         preferences.set(preventDisplaySleep, forKey: "session.preventDisplaySleep")
@@ -84,6 +178,7 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
     func start(now: Date = Date()) async {
         guard !stopped, !isActive, !isStarting else { return }
         effects.release(); effectReport = SessionEffectReport()
+        downloadProgressObserver.stop(); downloadProgressPercent = nil
         downloadStamp = nil; downloadObservedProgress = false; downloadStableSince = nil; downloadObservedURL = nil; downloadFinalBaseline = nil
         let newPlan: SessionPlan
         switch endCondition {
@@ -98,6 +193,9 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
             guard let url = applicationURL else { status = "请先选择正在运行的应用"; return }
             guard case .running(let pids) = applicationProbe(url), !pids.isEmpty else { status = "所选应用没有运行，或无法核验应用身份"; return }
             newPlan = .application(url)
+        case .process:
+            guard let process = selectedProcess, processProbe(process.identity) == .running else { status = "请先选择仍在运行且身份可核验的进程"; return }
+            newPlan = .process(process)
         case .download:
             guard let url = downloadURL else { status = "请先选择正在下载的文件"; return }
             switch downloadProbe(url) {
@@ -120,6 +218,13 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
         if case .deadline(let value) = newPlan { deadline = value }
         else { deadline = nil }
         status = sessionStatus(now: now)
+        if case .download(let url) = newPlan {
+            let urls = Self.isPartial(url) ? [url, url.deletingPathExtension()] : [url]
+            downloadProgressObserver.start(urls: urls) { [weak self] value in
+                guard let self, self.generation == token, self.isActive else { return }
+                self.downloadProgressPercent = value
+            }
+        }
         // Re-read immediately: the selected app may have exited while mode activation awaited.
         await tick(now: now)
     }
@@ -141,6 +246,7 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
     private func clear(status: String) {
         generation = UUID(); plan = nil; deadline = nil; isActive = false; isStarting = false
         effects.release(); effectReport = SessionEffectReport(); self.status = status
+        downloadProgressObserver.stop(); downloadProgressPercent = nil
         downloadStamp = nil; downloadStableSince = nil; downloadObservedProgress = false; downloadObservedURL = nil; downloadFinalBaseline = nil
     }
 
@@ -173,6 +279,12 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
                 else { status = "等待 \(url.deletingPathExtension().lastPathComponent) 退出" }
             case .absent: finished = true
             case .unavailable: status = "暂时无法核验应用，会话继续等待"
+            }
+        case .process(let process):
+            switch processProbe(process.identity) {
+            case .running: status = "等待 \(process.name)（PID \(process.identity.pid)）结束"
+            case .exited: finished = true
+            case .unavailable: status = "暂时无法核验所选进程，会话继续等待"
             }
         case .download(let url): finished = observeDownload(url, now: now)
         }
@@ -233,8 +345,8 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
         guard !(partial && url == original) else { status = "文件仍有下载临时后缀，等待完成后的重命名"; return false }
         guard stamp.bytes > 0, let stable = downloadStableSince else { status = "等待有效下载内容"; return false }
         let elapsed = max(0, now.timeIntervalSince(stable))
-        status = "已观察到下载进展 · 等待文件稳定 \(max(0, Int(ceil(stabilityPeriod - elapsed)))) 秒"
-        return elapsed >= stabilityPeriod
+        status = "已观察到下载进展 · 等待文件稳定 \(max(0, Int(ceil(downloadStabilitySeconds - elapsed)))) 秒"
+        return elapsed >= downloadStabilitySeconds
     }
     private static func isPartial(_ url: URL) -> Bool { ["crdownload", "part", "partial", "download", "tmp"].contains(url.pathExtension.lowercased()) }
 
@@ -261,6 +373,20 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
         }
     }
 
+    nonisolated static func readRunningBundleIdentifier(_ identifier: String) -> SessionApplicationReading {
+        let pids = NSWorkspace.shared.runningApplications.filter { !$0.isTerminated && $0.bundleIdentifier == identifier }.map(\.processIdentifier)
+        return pids.isEmpty ? .absent : .running(pids)
+    }
+    func chooseScreenSaverException() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
+        panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "添加屏保例外"; panel.message = "此应用运行时暂停本应用的自动屏保，仍保留即时锁定保护。"
+        if panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier,
+           !id.isEmpty, !screenSaverExceptionBundleIDs.contains(id) { screenSaverExceptionBundleIDs.append(id) }
+    }
+    func screenSaverExceptionName(_ identifier: String) -> String {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)?.deletingPathExtension().lastPathComponent ?? identifier
+    }
     func chooseApplication() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
         panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications")
@@ -269,12 +395,12 @@ enum SessionDownloadReading: Equatable { case file(SessionFileStamp), missing, u
     }
     func chooseDownload() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
-        panel.prompt = "监测文件"; panel.message = "选择正在写入的下载文件。必须观察到进展，并稳定 30 秒才结束；网络暂停也可能被视为稳定。"
+        panel.prompt = "监测文件"; panel.message = "选择正在写入的下载文件。必须观察到进展，并达到所设稳定时长才结束；网络暂停也可能被视为稳定。"
         if panel.runModal() == .OK { downloadURL = panel.url }
     }
     func chooseDriveDirectory() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
-        panel.prompt = "添加目录"; panel.message = "仅选择本地磁盘目录；会话期间每分钟写入并同步一个临时小文件，然后删除。"
+        panel.prompt = "添加目录"; panel.message = "仅选择本地磁盘目录；工作期间按所设间隔写入并同步一个临时小文件，然后删除。"
         if panel.runModal() == .OK, let url = panel.url, !driveDirectories.contains(url) { driveDirectories.append(url) }
     }
     func requestCursorAccess() { NativeSessionEffects.requestAccessibility() }

@@ -56,3 +56,21 @@ struct ScriptSessionArguments {
         return nil
     }
 }
+
+@objc(WakeMacControlCommand) final class ControlCommand: NSScriptCommand {
+    override func performDefaultImplementation() -> Any? {
+        guard let action = ScriptControlAction(rawValue: commandDescription.commandName.lowercased()) else {
+            scriptErrorNumber = -1708; scriptErrorString = "不支持的 WakeMac 命令。"; return nil
+        }
+        let arguments = evaluatedArguments ?? [:]
+        suspendExecution()
+        Task { @MainActor in
+            guard let model = ScriptBridge.model else {
+                scriptErrorNumber = -10000; scriptErrorString = "WakeMac 不可用。"; resumeExecution(withResult: nil); return
+            }
+            do { resumeExecution(withResult: try await action.perform(model: model, arguments: arguments)) }
+            catch { scriptErrorNumber = -10000; scriptErrorString = error.localizedDescription; resumeExecution(withResult: nil) }
+        }
+        return nil
+    }
+}

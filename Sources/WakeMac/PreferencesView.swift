@@ -54,7 +54,7 @@ struct PreferencesView: View {
                         case .automation: timerTab
                         case .command: taskTab
                         case .settings: settingsTab
-                        case .advanced: AdvancedView(appearance: model.appearance)
+                        case .advanced: AdvancedView(appearance: model.appearance, notifier: notifier)
                         case .history: historyTab
                         }
                     }.padding(.horizontal, 28).padding(.bottom, 28)
@@ -139,6 +139,9 @@ struct PreferencesView: View {
                             .accessibilityAddTraits(model.active == mode ? [.isSelected] : [])
                     }
                 }
+            }
+            WorkCard(title: "会话快捷操作", subtitle: "工作中调整仅影响本次会话；正常模式下调整保存为默认设置。") {
+                QuickSessionControls(model: model, sessions: model.sessions)
             }
             HStack {
                 WorkNote(text: model.display.lidClosed.map { $0 ? "上盖已合上" : "上盖已打开" } ?? "上盖状态未知", icon: "laptopcomputer")
@@ -303,12 +306,20 @@ struct PreferencesView: View {
                 }
                 if !notifier.message.isEmpty { WorkNote(text: notifier.message) }
             }.toggleStyle(.switch).controlSize(.small)
+            WorkCard(title: "会话通知", subtitle: "任务结果、低电量与错误提醒继续保留。") {
+                WorkToggle(title: "工作会话开始", isOn: $notifier.sessionStart)
+                WorkToggle(title: "工作会话结束", isOn: $notifier.sessionEnd)
+                WorkToggle(title: "自动触发开始与结束", isOn: $notifier.triggerChange)
+                WorkToggle(title: "自动清理已显示的 WakeMac 通知", isOn: $notifier.autoClear)
+            }
             WorkCard(title: "全局快捷键") {
                 WorkToggle(title: "启用快捷键", isOn: $shortcutEnabled)
                 ForEach(shortcutDraft.indices, id: \.self) { index in
                     HStack {
                         Text(shortcutDraft[index].title).font(WorkType.controlLabel)
                         Spacer()
+                        Toggle("启用" + shortcutDraft[index].title, isOn: $shortcutDraft[index].enabled)
+                            .labelsHidden().toggleStyle(.switch).controlSize(.small)
                         Picker("修饰键", selection: $shortcutDraft[index].modifiers) {
                             ForEach(GlobalHotKeys.modifiers, id: \.1) { Text($0.0).tag($0.1) }
                         }.labelsHidden().frame(width: 108)
@@ -318,12 +329,13 @@ struct PreferencesView: View {
                     }
                 }
                 HStack {
-                    Text(hotkeys.message.isEmpty ? "默认使用 ⌃⌥ + 1 / 2 / 3" : hotkeys.message)
+                    Text(hotkeys.message.isEmpty ? "模式默认使用 ⌃⌥ + 1 / 2 / 3；其他操作按需开启。" : hotkeys.message)
                         .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     Spacer()
                     Button("保存快捷键") { hotkeys.apply(shortcutDraft, enabled: shortcutEnabled) }
                 }
             }
+            BehaviorSettingsView(behavior: model.behavior)
             HStack {
                 WorkNote(text: "退出前会恢复正常休眠。", icon: "power")
                 Spacer()

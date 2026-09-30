@@ -41,17 +41,35 @@ struct BatterySource {
         return nil
     }
 }
+enum FeatureNotification: String { case sessionStart, sessionEnd, triggerChange, sessionExtended }
 @MainActor final class LocalNotifier: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     @Published var enabled = false
     @Published var authorizationStatus: UNAuthorizationStatus = .notDetermined
     @Published var message = ""
+    @Published var sessionStart = true { didSet { preferences.set(sessionStart, forKey: "notifications.sessionStart") } }
+    @Published var sessionEnd = true { didSet { preferences.set(sessionEnd, forKey: "notifications.sessionEnd") } }
+    @Published var triggerChange = true { didSet { preferences.set(triggerChange, forKey: "notifications.triggerChange") } }
+    @Published var autoClear = false { didSet { preferences.set(autoClear, forKey: "notifications.autoClear") } }
+    @Published var notificationSound = true { didSet { preferences.set(notificationSound, forKey: "notifications.sound") } }
+    @Published var lifecycleSound = false { didSet { preferences.set(lifecycleSound, forKey: "notifications.lifecycleSound") } }
+    @Published var extensionSound = false { didSet { preferences.set(extensionSound, forKey: "notifications.extensionSound") } }
+    private var eventSound: NSSound?
+    private let preferences: UserDefaults
     private let readAuthorization: () async -> UNAuthorizationStatus
     private let askAuthorization: () async throws -> Bool
     private let openSettings: (URL) -> Bool
     init(readAuthorization: @escaping () async -> UNAuthorizationStatus = { await UNUserNotificationCenter.current().notificationSettings().authorizationStatus },
          askAuthorization: @escaping () async throws -> Bool = { try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) },
-         openSettings: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }) {
+         openSettings: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }, preferences: UserDefaults = .standard) {
+        self.preferences = preferences
         self.readAuthorization = readAuthorization; self.askAuthorization = askAuthorization; self.openSettings = openSettings
+        sessionStart = preferences.object(forKey: "notifications.sessionStart") as? Bool ?? true
+        sessionEnd = preferences.object(forKey: "notifications.sessionEnd") as? Bool ?? true
+        triggerChange = preferences.object(forKey: "notifications.triggerChange") as? Bool ?? true
+        autoClear = preferences.bool(forKey: "notifications.autoClear")
+        notificationSound = preferences.object(forKey: "notifications.sound") as? Bool ?? true
+        lifecycleSound = preferences.bool(forKey: "notifications.lifecycleSound")
+        extensionSound = preferences.bool(forKey: "notifications.extensionSound")
         super.init()
     }
     static var settingsURL: URL {
@@ -82,12 +100,25 @@ struct BatterySource {
     func showSettings() {
         message = openSettings(Self.settingsURL) ? "已打开通知设置。" : "请打开系统设置 → 通知 → WakeMac。"
     }
-    func send(_ text: String) {
+    func send(_ text: String, sound: Bool? = nil) {
         guard enabled else { return }
         let content = UNMutableNotificationContent(); content.title = "WakeMac"; content.body = text
         let name = UserDefaults.standard.string(forKey: "appearance.sound") ?? ""
-        content.sound = name.isEmpty ? .default : UNNotificationSound(named: UNNotificationSoundName(rawValue: name))
+        content.sound = (sound ?? notificationSound) ? (name.isEmpty ? .default : UNNotificationSound(named: UNNotificationSoundName(rawValue: name))) : nil
+        if autoClear { UNUserNotificationCenter.current().removeAllDeliveredNotifications() }
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+    func allows(_ event: FeatureNotification) -> Bool {
+        switch event { case .sessionStart: sessionStart; case .sessionEnd: sessionEnd; case .triggerChange: triggerChange; case .sessionExtended: false }
+    }
+    func send(_ text: String, event: FeatureNotification) {
+        let standaloneSound = (lifecycleSound && (event == .sessionStart || event == .sessionEnd)) || (extensionSound && event == .sessionExtended)
+        if standaloneSound {
+            let name = preferences.string(forKey: "appearance.sound") ?? ""
+            eventSound = name.isEmpty ? NSSound(named: NSSound.Name("Glass")) : NSSound(contentsOfFile: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Sounds/" + name).path, byReference: true)
+            eventSound?.play()
+        }
+        guard allows(event) else { return }; send(text, sound: standaloneSound ? false : nil)
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }
 }

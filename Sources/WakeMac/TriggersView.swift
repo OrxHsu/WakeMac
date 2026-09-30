@@ -9,6 +9,7 @@ struct TriggersView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             WorkCard(title: "触发规则", subtitle: "条件满足时进入工作模式，条件结束时由会话恢复策略处理。所有规则默认关闭；系统锁定保护始终保留。") {
+                WorkToggle(title: "启用自动触发", detail: "暂停时保留规则设置，并停止自动匹配。", isOn: $controller.enabled)
                 HStack {
                     Text(controller.status).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                     Spacer()
@@ -50,6 +51,9 @@ struct TriggersView: View {
         }.sheet(item: $editing) { rule in TriggerRuleEditor(rule: rule, controller: controller) }
     }
     private func conditionTitle(_ condition: TriggerCondition) -> String {
+        if condition.kind == .weeklySchedule { return condition.kind.title + "：" + (condition.schedule?.summary ?? "尚未设置") }
+        if condition.kind == .externalDisplay && !condition.ignoreBuiltInDisplay { return "连接显示器（包括内建）" }
+        if condition.kind == .processRunning { return condition.kind.title + "：" + URL(fileURLWithPath: condition.value).lastPathComponent }
         guard condition.kind.requiresValue else { return condition.kind.title }
         if (condition.kind == .appRunning || condition.kind == .appFrontmost),
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: condition.value) {
@@ -97,18 +101,40 @@ private struct TriggerRuleEditor: View {
                                 Picker("条件", selection: $condition.kind) { ForEach(TriggerKind.allCases) { kind in Text(kind.title).tag(kind) } }
                                 Button("移除") { rule.conditions.removeAll { $0.id == condition.id } }.disabled(rule.conditions.count == 1)
                             }
+                            if condition.kind == .weeklySchedule { scheduleInput($condition) }
+                            if condition.kind == .externalDisplay {
+                                WorkToggle(title: "忽略内建显示器", detail: "只把外接显示器作为匹配条件。", isOn: $condition.ignoreBuiltInDisplay)
+                            }
                             if condition.kind.requiresValue {
                                 conditionInput($condition)
                                 if condition.kind != .appRunning && condition.kind != .appFrontmost {
                                     Text(condition.kind.hint).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                                 }
-                                if let validation = condition.validationError { Text(validation).font(.system(size: 11)).foregroundStyle(.red) }
                             }
+                            if let validation = condition.validationError { Text(validation).font(.system(size: 11)).foregroundStyle(.red) }
+                        }.onChange(of: condition.kind) { _, kind in
+                            if kind == .weeklySchedule && condition.schedule == nil { condition.schedule = TriggerWeeklySchedule() }
                         }.padding(12).background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 10))
                     }
                 }
             }.frame(minHeight: 160, maxHeight: 320)
             Button("添加条件") { rule.conditions.append(TriggerCondition()) }.buttonStyle(WorkButtonStyle())
+            VStack(alignment: .leading, spacing: 10) {
+                Text("规则生效时的显示行为").font(WorkType.controlLabel)
+                HStack {
+                    Picker("显示器", selection: $rule.preventDisplaySleep) {
+                        Text("使用全局设置").tag(Optional<Bool>.none)
+                        Text("保持亮屏").tag(Optional(true))
+                        Text("允许闲时息屏").tag(Optional(false))
+                    }
+                    Picker("屏幕保护", selection: $rule.preventScreenSaver) {
+                        Text("使用全局设置").tag(Optional<Bool>.none)
+                        Text("暂停屏保").tag(Optional(true))
+                        Text("允许屏保").tag(Optional(false))
+                    }
+                }
+                WorkNote(text: "覆盖仅在本规则控制工作模式时生效；系统锁定后亮屏与屏保保活会暂停，立即锁定保护保持开启。")
+            }
             WorkToggle(title: "启用这条规则", detail: "启用后会开始自动匹配条件。", isOn: $rule.enabled)
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
             HStack {
@@ -142,10 +168,10 @@ private struct TriggerRuleEditor: View {
             } else {
                 if !suggestions.isEmpty {
                     HStack {
-                        suggestionMenu(suggestions, condition: condition, title: kind == .mountedVolume ? "选择已挂载磁盘" : "选择当前观测")
+                        suggestionMenu(suggestions, condition: condition, title: kind == .mountedVolume ? "选择已挂载磁盘" : kind == .processRunning ? "选择运行中的进程" : "选择当前观测")
                         Button("刷新") { Task { await refreshPreview() } }
                     }
-                } else if [.usbDevice, .bluetoothDevice, .audioOutput, .mountedVolume].contains(kind) {
+                } else if [.usbDevice, .bluetoothDevice, .audioOutput, .mountedVolume, .processRunning].contains(kind) {
                     HStack {
                         Text(preview.unavailable[kind] ?? "没有可选设备，连接后可刷新。").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                         Button("刷新") { Task { await refreshPreview() } }
@@ -154,6 +180,44 @@ private struct TriggerRuleEditor: View {
                 TextField(kind.hint, text: condition.value)
             }
         }
+    }
+    private func scheduleInput(_ condition: Binding<TriggerCondition>) -> some View {
+        let schedule = Binding<TriggerWeeklySchedule>(get: { condition.wrappedValue.schedule ?? TriggerWeeklySchedule() }, set: { condition.wrappedValue.schedule = $0 })
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in
+                    let selected = schedule.wrappedValue.weekdays.contains(day)
+                    Button {
+                        if selected { schedule.wrappedValue.weekdays.remove(day) }
+                        else { schedule.wrappedValue.weekdays.insert(day) }
+                    } label: {
+                        Text([1: "周日", 2: "周一", 3: "周二", 4: "周三", 5: "周四", 6: "周五", 7: "周六"][day]!)
+                    }.buttonStyle(WorkButtonStyle(prominent: selected))
+                        .accessibilityValue(selected ? "已选择" : "未选择")
+                }
+            }
+            WorkToggle(title: "全天", detail: "按所选星期从当地 00:00 到次日 00:00。", isOn: schedule.allDay)
+            if !schedule.wrappedValue.allDay {
+                HStack {
+                    scheduleTimePicker("开始", minute: schedule.startMinute)
+                    scheduleTimePicker("结束", minute: schedule.endMinute)
+                }
+            }
+            WorkNote(text: "使用 Mac 当前时区的当地时间，开始包含、结束不包含。结束早于开始时跨至次日，归属开始的星期。夏令时跳过的时间不匹配，重复小时两次均按当地时间匹配。")
+        }
+    }
+    private func scheduleTimePicker(_ label: String, minute: Binding<Int>) -> some View {
+        // A weekly wall-clock time is not an absolute Date. Native NSDatePicker's
+        // AX value can apply the system timezone even when its visual timezone
+        // is UTC, so represent hours/minutes directly for both display and AX.
+        let hour = Binding<Int>(get: { minute.wrappedValue / 60 }, set: { minute.wrappedValue = min(max($0, 0), 23) * 60 + minute.wrappedValue % 60 })
+        let fraction = Binding<Int>(get: { minute.wrappedValue % 60 }, set: { minute.wrappedValue = (minute.wrappedValue / 60) * 60 + min(max($0, 0), 59) })
+        return HStack(spacing: 5) {
+            Text(label).font(WorkType.controlLabel)
+            TextField("小时", value: hour, format: .number.precision(.integerLength(2))).frame(width: 46).accessibilityLabel(label + "小时，0 至 23")
+            Text(":").foregroundStyle(WorkStyle.muted)
+            TextField("分钟", value: fraction, format: .number.precision(.integerLength(2))).frame(width: 46).accessibilityLabel(label + "分钟，0 至 59")
+        }.textFieldStyle(.roundedBorder).font(WorkType.body).monospacedDigit()
     }
     private func suggestionMenu(_ suggestions: [TriggerSuggestion], condition: Binding<TriggerCondition>, title: String) -> some View {
         Menu(title) {

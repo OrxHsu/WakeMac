@@ -48,10 +48,11 @@ extension WorkMode {
     @Published var triggerSummary = "自动触发尚未接管运行模式"
     lazy var triggers = TriggerController(preferences: preferences, source: triggerSource)
     lazy var sessions = makeSessionController()
+    lazy var behavior = BehaviorPreferences(preferences: preferences)
     lazy var idlePolicy: IdlePolicyController = {
         let controller = IdlePolicyController(preferences: preferences)
         controller.workingProvider = { [weak self] in self?.keepsAwake == true && self?.snapshot?.lockPolicy == .immediate }
-        controller.allowsScreenSaver = { [weak self] in self?.sessions.preventScreenSaver != true }
+        controller.allowsScreenSaver = { [weak self] in self?.sessions.effectivePreventScreenSaver != true && self?.sessions.screenSaverExceptionActive != true }
         controller.preflight = { [weak self] in
             guard let self, !self.busy else { return false }
             let revision = self.generation
@@ -66,6 +67,9 @@ extension WorkMode {
         return controller
     }()
     var triggerOwnedMode: WorkMode?
+    var triggerOwnedRuleID: UUID?
+    var appliedTriggerBehavior: SessionBehaviorOverride?
+    var triggerRuntimeMode: WorkMode?
     var suppressedTriggerIDs: Set<UUID> = []
     var lastFeatureSample = Date.distantPast
     var featureTickRunning = false
@@ -75,7 +79,9 @@ extension WorkMode {
     var automaticSleepRevision = 0
     var finalBatteryReading: (() -> BatteryReading?)?
     var notificationHandler: ((String) -> Void)?
+    var featureNotificationHandler: ((String, FeatureNotification) -> Void)?
     var openPreferences: (() -> Void)?
+    var openMenu: (() -> Void)?
     lazy var coordinator = ModeCoordinator(backend: backend)
     @Published var snapshot: Snapshot?
     @Published var display = DisplayState.read()
@@ -171,7 +177,9 @@ extension WorkMode {
     }
     func choose(_ mode: WorkMode, sleep: Bool = false, automatic: Bool = false, batterySleep: Bool = false, startupRecovery: Bool = false) async {
         guard !busy else { return }
+        let previousMode = active
         if !automatic || mode == .normal {
+            sessions.effectOverrides = nil
             sessions.manualModeChanged()
             if !startupRecovery { suppressCurrentTriggers() }
         }
@@ -225,9 +233,13 @@ extension WorkMode {
         if error { record("切换失败：" + message, notify: true) }
         else if pending != nil { record("等待恢复立即锁屏保护。", notify: true) }
         else { record(result == .sleepCancelled ? message : (sleep ? "已发送系统休眠请求。" : "模式已核验：" + mode.title)) }
+        if !automatic, !error, pending == nil, active == mode, previousMode != mode {
+            if mode != .normal { featureNotificationHandler?("工作已开始：" + mode.title, .sessionStart) }
+            else if previousMode == .desk || previousMode == .background { featureNotificationHandler?("工作已结束，已恢复正常休眠。", .sessionEnd) }
+        }
         onUpdate?()
         if quitWhenReady {
-            if active == .normal && pending == nil && !error { sessions.shutdown(); quitApplication?() }
+            if active == .normal && pending == nil && !error { sessions.shutdown(); behavior.saveStatistics(); quitApplication?() }
             else if mode != .normal { await choose(.normal) }
             else if error { quitWhenReady = false }
         }
@@ -291,6 +303,7 @@ extension WorkMode {
         model.showPanel = { [weak self] in self?.showPanel() }
         model.quitApplication = { [weak self] in self?.allowExit = true; NSApp.terminate(nil) }
         model.openPreferences = { [weak self] in self?.showPreferences() }
+        model.openMenu = { [weak self] in self?.togglePopover() }
         model.finalBatteryReading = { BatterySource.read() }
         notifier.configure()
         ScriptBridge.model = model
@@ -298,17 +311,26 @@ extension WorkMode {
             Task { @MainActor in await self?.notifier.refresh() }
         })
         model.notificationHandler = { [weak self] text in self?.notifier.send(text) }
+        model.featureNotificationHandler = { [weak self] text, event in self?.notifier.send(text, event: event) }
         hotkeys.handler = { [weak self] id in
             guard let self else { return }
             self.model.quitWhenReady = false
-            Task { await self.model.choose(id == 1 ? .background : id == 2 ? .desk : .normal) }
+            Task { await self.model.performShortcut(id) }
         }
         hotkeys.start()
         if !hotkeys.message.isEmpty { model.record(hotkeys.message) }
         let center = NSWorkspace.shared.notificationCenter
         for (name, text) in [(NSWorkspace.willSleepNotification, "系统即将休眠。"), (NSWorkspace.didWakeNotification, "系统已唤醒。"), (NSWorkspace.screensDidSleepNotification, "系统显示器已休眠。"), (NSWorkspace.screensDidWakeNotification, "系统显示器已唤醒。")] {
             observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.model.record(text) }
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.model.record(text)
+                    if name == NSWorkspace.willSleepNotification { await self.model.handleSystemWillSleep() }
+                    if name == NSWorkspace.didWakeNotification, self.model.behavior.startAfterWake {
+                        await self.model.refresh()
+                        await self.model.beginDefaultSession()
+                    }
+                }
             })
         }
         automationTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -320,12 +342,13 @@ extension WorkMode {
         Task {
             if UserDefaults.standard.bool(forKey: "HasConfiguredMode") { await model.choose(.normal, automatic: true, startupRecovery: true) }
             else { await model.refresh() }
+            if model.behavior.startAtLaunch { await model.beginDefaultSession() }
         }
         timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.model.refresh() }
         }
-        // Renew the helper lease even while a window is being dragged or a
-        // native control menu is tracking. A genuinely hung process still expires.
+        // Keep readback fresh while controls track. The backend's independent
+        // loop renews its lease even when a readback command or UI is delayed.
         if let timer { RunLoop.main.add(timer, forMode: .common) }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPreferences(); return true }

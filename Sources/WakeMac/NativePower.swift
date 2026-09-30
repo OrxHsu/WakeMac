@@ -45,7 +45,11 @@ private final class ReplyGate {
 
 /// Used only from MacBackend's actor. A connection owns one helper lease;
 /// invalidating it causes the helper to restore sleep.
-final class PowerHelperClient {
+protocol BackgroundLeaseClient: AnyObject {
+    func setBackground(_ enabled: Bool) async throws
+    func renew() async throws
+}
+final class PowerHelperClient: BackgroundLeaseClient {
     private var connection: NSXPCConnection?
     func setBackground(_ enabled: Bool) async throws {
         try await request { service, reply in service.setBackground(enabled, reply: reply) }

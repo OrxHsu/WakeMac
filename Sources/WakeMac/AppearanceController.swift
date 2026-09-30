@@ -13,6 +13,7 @@ import UserNotifications
     @Published var template: Bool { didSet { preferences.set(template, forKey: "appearance.template"); onUpdate?() } }
     @Published var showEndTime: Bool { didSet { preferences.set(showEndTime, forKey: "appearance.showEndTime"); onUpdate?() } }
     @Published var twentyFourHour: Bool { didSet { preferences.set(twentyFourHour, forKey: "appearance.24hour"); onUpdate?() } }
+    @Published var iconPadding: Double { didSet { preferences.set(iconPadding, forKey: "appearance.padding"); onUpdate?() } }
     @Published private(set) var soundName: String
     @Published private(set) var message = ""
     var onUpdate: (() -> Void)?
@@ -24,8 +25,18 @@ import UserNotifications
         showEndTime = preferences.bool(forKey: "appearance.showEndTime")
         twentyFourHour = preferences.object(forKey: "appearance.24hour") as? Bool ?? true
         soundName = preferences.string(forKey: "appearance.sound") ?? ""
+        iconPadding = preferences.object(forKey: "appearance.padding") as? Double ?? 0
     }
     func menuImage() -> NSImage {
+        let source = baseMenuImage()
+        let padding = iconPadding.isFinite ? min(max(iconPadding, 0), 12) : 0
+        guard padding > 0 else { return source }
+        let image = NSImage(size: NSSize(width: 20 + padding * 2, height: 18), flipped: false) { _ in
+            source.draw(in: NSRect(x: padding, y: 0, width: 20, height: 18)); return true
+        }
+        image.isTemplate = source.isTemplate; return image
+    }
+    private func baseMenuImage() -> NSImage {
         if icon == .moon { return MenuMark.image() }
         if icon == .custom, let path = preferences.string(forKey: "appearance.customIcon"), let original = NSImage(contentsOfFile: path), original.size.width > 0, original.size.height > 0 {
             let bounds = NSSize(width: 20, height: 18)
@@ -73,6 +84,12 @@ import UserNotifications
     func previewSound() {
         guard !soundName.isEmpty else { NSSound.beep(); return }
         NSSound(contentsOfFile: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Sounds/" + soundName).path, byReference: true)?.play()
+    }
+    private var lidSound: NSSound?
+    func playLidTone(volume: Double) {
+        guard volume.isFinite, lidSound?.isPlaying != true else { return }
+        let sound = soundName.isEmpty ? NSSound(named: NSSound.Name("Glass")) : NSSound(contentsOfFile: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Sounds/" + soundName).path, byReference: true)
+        sound?.volume = Float(min(max(volume, 0), 1)); lidSound = sound; sound?.play()
     }
     private enum ImportError: LocalizedError {
         case invalidImage, invalidSound

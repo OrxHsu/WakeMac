@@ -111,7 +111,7 @@ import WakeMacCore
     }
     func testAllConditionKindsReadValuesWithoutTreatingUnknownAsFalse() {
         func c(_ kind: TriggerKind, _ value: String = "") -> TriggerCondition { condition(kind, value) }
-        let items: [TriggerCondition] = [c(.externalDisplay), c(.displayMirroring), c(.usbDevice, "42"), c(.bluetoothDevice, "Keyboard"), c(.appRunning, "com.apple.Safari"), c(.appFrontmost, "com.apple.Safari"), c(.batteryCharging), c(.batteryAbove, "50"), c(.acConnected), c(.acDisconnected), c(.ipAddress, "2001:db8::1"), c(.wifiSSID, "Office"), c(.ciscoVPN), c(.dnsServer, "1.1.1.1"), c(.headphones), c(.audioOutput, "headphones-uid"), c(.mountedVolume, "/Volumes/Backup"), c(.cpuAbove, "50"), c(.idleAbove, "60")]
+        let items: [TriggerCondition] = [c(.externalDisplay), c(.displayMirroring), c(.usbDevice, "42"), c(.bluetoothDevice, "Keyboard"), c(.appRunning, "com.apple.Safari"), c(.appFrontmost, "com.apple.Safari"), c(.batteryCharging), c(.batteryAbove, "50"), c(.acConnected), c(.acDisconnected), c(.ipAddress, "2001:db8::1"), c(.wifiSSID, "Office"), c(.ciscoVPN), c(.dnsServer, "1.1.1.1"), c(.headphones), c(.audioOutput, "headphones-uid"), c(.mountedVolume, "/Volumes/Backup"), c(.cpuAbove, "50"), c(.idleAbove, "60"), c(.processRunning, "/usr/bin/test-trigger"), TriggerCondition(kind: .weeklySchedule, schedule: TriggerWeeklySchedule(weekdays: Set(1...7), allDay: true))]
         XCTAssertEqual(Set(items.map(\.kind)), Set(TriggerKind.allCases))
         for item in items { XCTAssertEqual(TriggerSnapshot().evaluate(item).state, .unknown, item.kind.rawValue) }
         var s = TriggerSnapshot()
@@ -124,6 +124,7 @@ import WakeMacCore
         s.headphones = true; s.audioOutput = .init(id: "headphones-uid", name: "Headphones")
         s.mountedVolumes = [.init(id: "/Volumes/Backup", name: "Backup")]
         s.cpuPercent = 70; s.idleSeconds = 100
+        s.observedAt = Date(); s.processes = [.init(id: "/usr/bin/test-trigger", name: "test-trigger")]; s.processListComplete = true
         for item in items {
             XCTAssertEqual(s.evaluate(item).state, item.kind == .acDisconnected ? .unmatched : .matched, item.kind.rawValue)
         }
@@ -209,6 +210,137 @@ import WakeMacCore
         for _ in 0..<2 {
             let snapshot = await source.read(kinds: [.audioOutput], now: Date())
             if let output = snapshot.audioOutput { XCTAssertFalse(output.id.isEmpty); XCTAssertFalse(output.name.isEmpty) }
+        }
+    }
+    private func utcDate(_ iso: String) -> Date { ISO8601DateFormatter().date(from: iso)! }
+    private func calendar(_ timeZone: String) -> Calendar {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: timeZone)!
+        return calendar
+    }
+    func testWeeklyScheduleContainsStartExcludesEndAndUsesSelectedWeekdays() {
+        let schedule = TriggerWeeklySchedule(weekdays: [2], startMinute: 9 * 60, endMinute: 17 * 60)
+        let utc = calendar("UTC")
+        XCTAssertEqual(schedule.matches(at: utcDate("2026-09-28T08:59:59Z"), calendar: utc), false)
+        XCTAssertEqual(schedule.matches(at: utcDate("2026-09-28T09:00:00Z"), calendar: utc), true)
+        XCTAssertEqual(schedule.matches(at: utcDate("2026-09-28T16:59:59Z"), calendar: utc), true)
+        XCTAssertEqual(schedule.matches(at: utcDate("2026-09-28T17:00:00Z"), calendar: utc), false)
+        XCTAssertEqual(schedule.matches(at: utcDate("2026-09-29T10:00:00Z"), calendar: utc), false)
+        let noonMuscat = utcDate("2026-09-28T08:00:00Z")
+        XCTAssertEqual(schedule.matches(at: noonMuscat, calendar: calendar("Asia/Muscat")), true)
+        XCTAssertEqual(schedule.matches(at: noonMuscat, calendar: utc), false)
+    }
+    func testOvernightScheduleBelongsToStartingWeekdayIncludingSundayWrap() {
+        let utc = calendar("UTC")
+        let friday = TriggerWeeklySchedule(weekdays: [6], startMinute: 22 * 60, endMinute: 2 * 60)
+        XCTAssertEqual(friday.matches(at: utcDate("2026-10-02T22:00:00Z"), calendar: utc), true)
+        XCTAssertEqual(friday.matches(at: utcDate("2026-10-03T01:59:59Z"), calendar: utc), true)
+        XCTAssertEqual(friday.matches(at: utcDate("2026-10-03T02:00:00Z"), calendar: utc), false)
+        XCTAssertEqual(friday.matches(at: utcDate("2026-10-02T01:00:00Z"), calendar: utc), false)
+        let saturday = TriggerWeeklySchedule(weekdays: [7], startMinute: 23 * 60, endMinute: 60)
+        XCTAssertEqual(saturday.matches(at: utcDate("2026-10-04T00:30:00Z"), calendar: utc), true)
+        XCTAssertEqual(saturday.matches(at: utcDate("2026-10-04T01:00:00Z"), calendar: utc), false)
+    }
+    func testWeeklyScheduleDSTSpringGapAndRepeatedAutumnHourUseLocalClock() {
+        let ny = calendar("America/New_York")
+        let spring = TriggerWeeklySchedule(weekdays: [1], startMinute: 150, endMinute: 240)
+        XCTAssertEqual(spring.matches(at: utcDate("2026-03-08T06:59:59Z"), calendar: ny), false)
+        XCTAssertEqual(spring.matches(at: utcDate("2026-03-08T07:00:00Z"), calendar: ny), true)
+        XCTAssertEqual(spring.matches(at: utcDate("2026-03-08T08:00:00Z"), calendar: ny), false)
+        let skipped = TriggerWeeklySchedule(weekdays: [1], startMinute: 135, endMinute: 165)
+        XCTAssertEqual(skipped.matches(at: utcDate("2026-03-08T07:00:00Z"), calendar: ny), false)
+        let autumn = TriggerWeeklySchedule(weekdays: [1], startMinute: 75, endMinute: 105)
+        XCTAssertEqual(autumn.matches(at: utcDate("2026-11-01T05:30:00Z"), calendar: ny), true)
+        XCTAssertEqual(autumn.matches(at: utcDate("2026-11-01T06:30:00Z"), calendar: ny), true)
+        XCTAssertEqual(autumn.matches(at: utcDate("2026-11-01T05:45:00Z"), calendar: ny), false)
+        XCTAssertEqual(autumn.matches(at: utcDate("2026-11-01T06:45:00Z"), calendar: ny), false)
+    }
+    func testScheduleUnknownInvalidAndAllDayBoundaries() {
+        let utc = calendar("UTC"), date = utcDate("2026-09-28T00:00:00Z")
+        let allDay = TriggerWeeklySchedule(weekdays: [2], startMinute: 0, endMinute: 0, allDay: true)
+        XCTAssertEqual(allDay.matches(at: date, calendar: utc), true)
+        XCTAssertEqual(allDay.matches(at: utcDate("2026-09-29T00:00:00Z"), calendar: utc), false)
+        let valid = TriggerCondition(kind: .weeklySchedule, schedule: allDay)
+        XCTAssertEqual(TriggerSnapshot().evaluate(valid).state, .unknown)
+        XCTAssertEqual(TriggerSnapshot().evaluate(valid, now: date, calendar: utc).state, .matched)
+        for schedule in [TriggerWeeklySchedule(weekdays: []), TriggerWeeklySchedule(weekdays: [0, 8]), TriggerWeeklySchedule(startMinute: -1), TriggerWeeklySchedule(endMinute: 1440), TriggerWeeklySchedule(startMinute: 600, endMinute: 600)] {
+            XCTAssertNotNil(schedule.validationError)
+            XCTAssertNil(schedule.matches(at: date, calendar: utc))
+            XCTAssertEqual(TriggerSnapshot().evaluate(TriggerCondition(kind: .weeklySchedule, schedule: schedule), now: date, calendar: utc).state, .unknown)
+        }
+        XCTAssertNotNil(TriggerCondition(kind: .weeklySchedule).validationError)
+    }
+    func testLegacyRuleMigrationKeepsRulesEnabledAndInheritsDisplayOverrides() throws {
+        let prefs = defaults(), id = UUID()
+        let legacy: [[String: Any]] = [["id": id.uuidString, "name": "Legacy", "mode": "desk", "enabled": true, "combination": "all", "conditions": [["id": UUID().uuidString, "kind": "externalDisplay", "value": ""]]]]
+        prefs.set(try JSONSerialization.data(withJSONObject: legacy), forKey: "NativeTriggerRules.v1")
+        let controller = TriggerController(preferences: prefs, source: TriggerTestSource())
+        XCTAssertTrue(controller.enabled)
+        XCTAssertEqual(controller.rules.map(\.id), [id])
+        XCTAssertTrue(controller.rules[0].enabled)
+        XCTAssertNil(controller.rules[0].preventDisplaySleep); XCTAssertNil(controller.rules[0].preventScreenSaver)
+        XCTAssertTrue(controller.rules[0].conditions[0].ignoreBuiltInDisplay)
+        XCTAssertNil(controller.rules[0].conditions[0].schedule)
+        var rule = controller.rules[0]; rule.preventDisplaySleep = true; rule.preventScreenSaver = false
+        rule.conditions = [TriggerCondition(kind: .weeklySchedule, schedule: TriggerWeeklySchedule(weekdays: [2], startMinute: 1320, endMinute: 120))]
+        XCTAssertNil(controller.save(rule))
+        let reread = TriggerController(preferences: prefs, source: TriggerTestSource())
+        XCTAssertEqual(reread.rules, [rule])
+    }
+    func testMasterSwitchPersistsAndStopsReadsWithoutRemovingEnabledRules() async {
+        let prefs = defaults(), source = TriggerTestSource(), controller = TriggerController(preferences: prefs, source: source)
+        source.snapshot.externalDisplay = true
+        let rule = TriggerRule(enabled: true)
+        XCTAssertNil(controller.save(rule)); controller.enabled = false
+        let paused = await controller.matchingRules(now: Date(), battery: nil)
+        XCTAssertTrue(paused.isEmpty); XCTAssertEqual(source.calls, 0)
+        let reread = TriggerController(preferences: prefs, source: source)
+        XCTAssertFalse(reread.enabled); XCTAssertTrue(reread.rules[0].enabled)
+        reread.enabled = true
+        let resumed = await reread.matchingRules(now: Date(), battery: nil)
+        XCTAssertEqual(resumed.map(\.id), [rule.id]); XCTAssertEqual(source.calls, 1)
+    }
+    func testMasterSwitchCannotReturnMatchAlreadyBeingObserved() async {
+        let source = SuspendedTriggerSource(), controller = TriggerController(preferences: defaults(), source: source)
+        XCTAssertNil(controller.save(TriggerRule(enabled: true)))
+        let task = Task { await controller.matchingRules(now: Date(), battery: nil) }
+        for _ in 0..<100 where source.pending == nil { await Task.yield() }
+        guard let pending = source.pending else { XCTFail("Observation did not start"); task.cancel(); return }
+        controller.enabled = false; pending.resume(); source.pending = nil
+        let matches = await task.value
+        XCTAssertTrue(matches.isEmpty); XCTAssertTrue(controller.observations.isEmpty)
+    }
+    func testProcessCriteriaUseExecutablePathAndDoNotInferExitFromIncompleteSnapshot() {
+        let condition = TriggerCondition(kind: .processRunning, value: "/usr/bin/test-trigger")
+        XCTAssertNil(condition.validationError)
+        XCTAssertNotNil(TriggerCondition(kind: .processRunning, value: "test-trigger").validationError)
+        XCTAssertNotNil(TriggerCondition(kind: .processRunning, value: "/").validationError)
+        var snapshot = TriggerSnapshot()
+        XCTAssertEqual(snapshot.evaluate(condition).state, .unknown)
+        snapshot.processes = []; snapshot.processListComplete = false
+        XCTAssertEqual(snapshot.evaluate(condition).state, .unknown)
+        snapshot.processListComplete = true
+        XCTAssertEqual(snapshot.evaluate(condition).state, .unmatched)
+        snapshot.processes = [.init(id: "/usr/bin/test-trigger", name: "test-trigger")]; snapshot.processListComplete = false
+        XCTAssertEqual(snapshot.evaluate(condition).state, .matched)
+        XCTAssertEqual(snapshot.suggestions(for: .processRunning).first?.value, "/usr/bin/test-trigger")
+    }
+    func testDisplayCriterionDefaultsToIgnoringBuiltinAndCanExplicitlyIncludeIt() {
+        var snapshot = TriggerSnapshot(); snapshot.externalDisplay = false; snapshot.connectedDisplay = true
+        var condition = TriggerCondition(kind: .externalDisplay)
+        XCTAssertTrue(condition.ignoreBuiltInDisplay)
+        XCTAssertEqual(snapshot.evaluate(condition).state, .unmatched)
+        condition.ignoreBuiltInDisplay = false
+        XCTAssertEqual(snapshot.evaluate(condition).state, .matched)
+        snapshot.connectedDisplay = nil
+        XCTAssertEqual(snapshot.evaluate(condition).state, .unknown)
+    }
+    func testNativeProcessDiscoveryIncludesThisNonGUIExecutable() async {
+        let snapshot = await NativeTriggerObservations().read(kinds: [.processRunning], now: Date())
+        let own = ProcessDiscovery.process(pid: ProcessInfo.processInfo.processIdentifier)
+        XCTAssertNotNil(own)
+        if let own {
+            let value = TriggerSnapshot.normalizedProcessPath(own.executablePath)
+            XCTAssertEqual(snapshot.evaluate(TriggerCondition(kind: .processRunning, value: value)).state, .matched)
         }
     }
     func testNativeReadOnlyCPUSamplingAndIdleObservation() async {

@@ -71,6 +71,10 @@ struct ControlPanel: View {
                 ForEach(WorkMode.allCases, id: \.self) { mode in modeRow(mode) }
             }.padding(.horizontal, 12)
 
+            DisclosureGroup("会话快捷操作") {
+                QuickSessionControls(model: model, sessions: model.sessions, compact: true).padding(.top, 8)
+            }.font(WorkType.body).padding(.horizontal, 22).padding(.top, 10)
+
             if let countdown = model.countdownText {
                 HStack(spacing: 8) {
                     Image(systemName: "timer")
