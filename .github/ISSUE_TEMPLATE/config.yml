@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 安全漏洞私密报告
+    url: https://github.com/OrxHsu/WakeMac/security/advisories/new
+    about: 涉及越权、认证或隐私的问题请不要公开发布细节。

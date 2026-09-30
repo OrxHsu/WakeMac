@@ -1,0 +1,36 @@
+name: 错误报告 / Bug report
+description: 界面、会话、电源或设备兼容问题
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: WakeMac 版本
+      placeholder: 例如 1.0.0（构建 30）
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: macOS 版本与芯片
+      placeholder: 例如 macOS 26、Apple M4
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 请说明所用模式、会话或规则；电源问题请说明合盖和充电状态。
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 预期结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 截图或补充信息
+      description: 设备问题请提供型号；分享截图和日志前移除用户名、路径、网络名称、命令输出及凭据等私人信息。安全漏洞请使用私密报告。
