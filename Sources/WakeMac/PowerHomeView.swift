@@ -111,8 +111,8 @@ struct PowerHomeView: View {
                     Task { await model.choose(mode) }
                 } label: {
                     HStack(spacing: 9) {
-                        TerminalIcon(name: model.active == mode ? "square.fill" : mode == .background ? "laptopcomputer" : mode == .desk ? "display" : "moon.zzz")
-                            .font(.system(size: model.active == mode ? 9 : 18)).frame(width: 22)
+                        TerminalIcon(name: mode == .background ? "laptopcomputer" : mode == .desk ? "display" : "moon.zzz")
+                            .frame(width: 22)
                         Text(mode.title).font(.system(size: 15, weight: .semibold))
                     }.frame(maxWidth: .infinity).frame(height: 48)
                         .background {
@@ -154,9 +154,9 @@ struct PowerHomeView: View {
                     .disabled(model.busy || sessions.isStarting)
             }.padding(.vertical, 13)
             rule
-            HStack(spacing: 8) {
-                TerminalIcon(name: model.helperStatus == .enabled ? "square.fill" : "key")
-                    .font(.system(size: 9))
+            HStack(spacing: 10) {
+                TerminalIcon(name: model.helperStatus == .enabled ? "checkmark.shield" : "key")
+                    .frame(width: 22)
                 if model.helperStatus == .enabled {
                     Text("合盖服务已授权").font(.system(size: 11)).foregroundStyle(TerminalStyle.muted)
                 } else {

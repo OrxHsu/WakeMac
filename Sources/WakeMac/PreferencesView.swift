@@ -207,27 +207,7 @@ struct PreferencesView: View {
                         }.workKeyboardFocus(radius: 0).disabled(model.jobRunning)
                     }
                 }
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("命令").font(.system(size: 11, weight: .medium))
-                        Spacer()
-                        Text("zsh").font(.system(size: 10, design: .monospaced))
-                    }.foregroundStyle(WorkStyle.muted)
-                    TextEditor(text: $command).font(.system(size: 12, design: .monospaced))
-                        .scrollContentBackground(.hidden).padding(10).frame(height: 120)
-                        .background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 0))
-                        .overlay(RoundedRectangle(cornerRadius: 0).strokeBorder(WorkStyle.line))
-                        .disabled(model.jobRunning).accessibilityLabel("要运行的 zsh 命令")
-                }
-                HStack {
-                    TerminalLabel(model.jobStatus, systemImage: model.jobRunning ? "circle.dotted" : "terminal")
-                        .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
-                    Spacer()
-                    Button { Task { await model.startJob(command: command, directory: directory) } } label: {
-                        TerminalLabel("运行，成功后休眠", systemImage: "play.fill")
-                    }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0)
-                        .disabled(model.jobRunning || model.busy || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+                commandConsole
                 if model.jobRunning || model.automation.jobSleepAt != nil {
                     Button("取消完成后休眠，命令继续", action: model.cancelAutomaticSleep).workKeyboardFocus(radius: 0)
                 }
@@ -242,6 +222,58 @@ struct PreferencesView: View {
             }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
             feedback
         }
+    }
+
+    private var commandConsole: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                TerminalIcon(name: "terminal", size: 14).foregroundStyle(WorkStyle.blue)
+                Text("zsh").font(.system(size: 11, weight: .medium, design: .monospaced))
+                Text(directory.isEmpty ? "未选择工作目录" : directory)
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(WorkStyle.muted)
+                    .lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 12)
+                Text(model.jobRunning ? "RUNNING" : "COMMAND")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(model.jobRunning ? WorkStyle.blue : WorkStyle.muted)
+            }.padding(.horizontal, 12).padding(.vertical, 9)
+                .background(TerminalStyle.silver.opacity(0.45))
+            Rectangle().fill(WorkStyle.line).frame(height: 1)
+            HStack(alignment: .top, spacing: 8) {
+                Text("❯").font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(WorkStyle.blue).frame(width: 18).padding(.top, 1)
+                    .accessibilityHidden(true)
+                ZStack(alignment: .topLeading) {
+                    if command.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("# 在这里输入命令，支持多行")
+                            Text("# 成功后倒计时休眠，失败时保留现场")
+                        }.font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(TerminalStyle.steel)
+                            .padding(.leading, 5).padding(.top, 1)
+                            .allowsHitTesting(false).accessibilityHidden(true)
+                    }
+                    TextEditor(text: $command).font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(WorkStyle.ink).scrollContentBackground(.hidden)
+                        .frame(height: 132).disabled(model.jobRunning).focusEffectDisabled()
+                        .accessibilityLabel("要运行的 zsh 命令")
+                }
+            }.padding(12).background(WorkStyle.canvas)
+            Rectangle().fill(WorkStyle.line).frame(height: 1)
+            HStack(spacing: 12) {
+                HStack(spacing: 7) {
+                    Circle().fill(model.jobRunning ? WorkStyle.blue : TerminalStyle.amber).frame(width: 5, height: 5)
+                        .accessibilityHidden(true)
+                    Text(model.jobStatus).font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(WorkStyle.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Button { Task { await model.startJob(command: command, directory: directory) } } label: {
+                    TerminalLabel("运行，成功后休眠", systemImage: "play.fill")
+                }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0)
+                    .disabled(model.jobRunning || model.busy || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }.padding(12).background(TerminalStyle.silver.opacity(0.2))
+        }.overlay(Rectangle().strokeBorder(WorkStyle.line))
     }
 
     private var settingsTab: some View {
