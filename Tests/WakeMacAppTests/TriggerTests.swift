@@ -348,8 +348,13 @@ import WakeMacCore
         let first = await source.read(kinds: [.cpuAbove, .idleAbove], now: Date())
         XCTAssertNil(first.cpuPercent)
         XCTAssertNotNil(first.idleSeconds)
-        try? await Task.sleep(nanoseconds: 30_000_000)
-        let second = await source.read(kinds: [.cpuAbove, .idleAbove], now: Date())
+        // Kernel CPU ticks may not advance within 30 ms on an idle machine.
+        // Wait for a real interval, rather than require a fictitious zero sample.
+        var second = first
+        for _ in 0..<10 where second.cpuPercent == nil {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            second = await source.read(kinds: [.cpuAbove, .idleAbove], now: Date())
+        }
         XCTAssertNotNil(second.cpuPercent)
         if let percent = second.cpuPercent { XCTAssertTrue((0...100).contains(percent)) }
     }

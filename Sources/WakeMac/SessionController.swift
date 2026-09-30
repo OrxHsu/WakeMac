@@ -197,7 +197,8 @@ struct SessionBehaviorOverride: Equatable {
             guard let process = selectedProcess, processProbe(process.identity) == .running else { status = "请先选择仍在运行且身份可核验的进程"; return }
             newPlan = .process(process)
         case .download:
-            guard let url = downloadURL else { status = "请先选择正在下载的文件"; return }
+            guard let selected = downloadURL else { status = "请先选择正在下载的文件"; return }
+            let url = Self.downloadContainer(selected)
             switch downloadProbe(url) {
             case .file(let stamp): downloadStamp = stamp; downloadObservedURL = url
             case .missing: break
@@ -350,6 +351,14 @@ struct SessionBehaviorOverride: Equatable {
     }
     private static func isPartial(_ url: URL) -> Bool { ["crdownload", "part", "partial", "download", "tmp"].contains(url.pathExtension.lowercased()) }
 
+    // Safari moves the same-named payload out of its .download package when
+    // finished. Track the package even when the user selects its inner file.
+    nonisolated private static func downloadContainer(_ url: URL) -> URL {
+        let parent = url.deletingLastPathComponent()
+        return parent.pathExtension.lowercased() == "download"
+            && parent.deletingPathExtension().lastPathComponent == url.lastPathComponent ? parent : url
+    }
+
     nonisolated static func readApplication(_ url: URL) -> SessionApplicationReading {
         guard let bundle = Bundle(url: url), let identifier = bundle.bundleIdentifier,
               FileManager.default.fileExists(atPath: url.path) else { return .unavailable }
@@ -361,7 +370,14 @@ struct SessionBehaviorOverride: Equatable {
     }
     nonisolated static func readDownload(_ url: URL) -> SessionDownloadReading {
         do {
-            let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+            var attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+            if attrs[.type] as? FileAttributeType == .typeDirectory, url.pathExtension.lowercased() == "download" {
+                let payload = url.appendingPathComponent(url.deletingPathExtension().lastPathComponent)
+                // Read only the explicitly selected payload, never private
+                // browser metadata or arbitrary files inside the package.
+                guard let payloadAttrs = try? FileManager.default.attributesOfItem(atPath: payload.path) else { return .unavailable }
+                attrs = payloadAttrs
+            }
             guard attrs[.type] as? FileAttributeType == .typeRegular,
                   let size = attrs[.size] as? NSNumber, let modified = attrs[.modificationDate] as? Date,
                   let identity = attrs[.systemFileNumber] as? NSNumber else { return .unavailable }
@@ -395,7 +411,8 @@ struct SessionBehaviorOverride: Equatable {
     }
     func chooseDownload() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
-        panel.prompt = "监测文件"; panel.message = "选择正在写入的下载文件。必须观察到进展，并达到所设稳定时长才结束；网络暂停也可能被视为稳定。"
+        panel.treatsFilePackagesAsDirectories = false
+        panel.prompt = "监测文件"; panel.message = "选择正在写入的下载文件或 Safari 的 .download 文件。观察到增长并完成重命名后，达到所设稳定时长才结束；网络暂停也可能被视为稳定。"
         if panel.runModal() == .OK { downloadURL = panel.url }
     }
     func chooseDriveDirectory() {
