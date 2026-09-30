@@ -109,4 +109,4 @@ WAKEMAC_SIGN_IDENTITY='你的签名证书名称或 SHA-1' ./scripts/build-app.sh
 
 ## License
 
-[MIT](LICENSE)。随包字体使用独立的 [SIL Open Font License](Assets/Licenses/README.md)。WakeMac 是独立实现，与 Amphetamine、Power Protect 及 Apple 无隶属关系。
+[MIT](LICENSE)。随包字体使用独立的 [SIL Open Font License](Assets/Licenses/README.md)。
