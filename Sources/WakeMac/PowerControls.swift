@@ -13,10 +13,11 @@ struct PowerControls: View {
             }
             Rectangle().fill(WorkStyle.line.opacity(0.6)).frame(height: 1)
             control("合盖继续运行", detail: "开启时同时保持唤醒", icon: "laptopcomputer", enabled: model.runsWithLidClosed) { enabled in
-                Task { await model.setRunsWithLidClosed(enabled) }
+                Task { await model.changeSessionLidMode(enabled) }
             }.disabled(model.helperStatus != .enabled)
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 TerminalIcon(name: model.helperStatus == .enabled ? "checkmark.shield" : "key")
+                    .frame(width: 22)
                 Text(serviceSummary)
                 Spacer(minLength: 0)
                 if model.helperStatus != .enabled {

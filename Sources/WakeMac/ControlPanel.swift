@@ -30,128 +30,197 @@ enum MenuMark {
 
 struct ControlPanel: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var sessions: SessionController
     var standalone = false
-    private var protected: Bool { model.snapshot?.lockPolicy == .immediate }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Image(nsImage: MenuMark.image()).renderingMode(.template)
-                    .foregroundStyle(WorkStyle.muted).frame(width: 20, height: 20)
-                Text("WakeMac").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                if model.busy { ProgressView().controlSize(.small) }
-                Button { model.openPreferences?() } label: {
-                    TerminalIcon(name: "slider.horizontal.3").font(.system(size: 14))
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).foregroundStyle(WorkStyle.muted)
-                    .accessibilityLabel("打开主窗口").help("工作模式与设置")
-            }.padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 22)
+    var height: CGFloat = 560
+    var closePopover: (() -> Void)?
+    @State private var expanded = false
+    @Namespace private var modeSelection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(model.busy ? "正在切换" : model.pending != nil ? "等待确认" : model.error ? "需要检查" : model.active?.title ?? "读取状态")
-                    .font(WorkType.pageTitle)
-                HStack(spacing: 6) {
-                    Circle().fill(model.error ? Color.orange : WorkStyle.blue).frame(width: 5, height: 5)
-                    Text(model.headline).font(.system(size: 11, weight: .medium))
-                    Spacer()
-                    if let battery = model.battery {
-                        TerminalIcon(name: battery.onBattery ? "battery.75percent" : "bolt.fill")
-                        Text("\(battery.percent)%").monospacedDigit()
-                    }
-                }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
-            }.padding(.horizontal, 24).padding(.bottom, 22)
-
-            PowerControls(model: model, compact: true)
-                .padding(16)
-                .background(WorkStyle.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 0))
-                .padding(.horizontal, 16).padding(.bottom, 16)
-
-            VStack(spacing: 4) {
-                ForEach(WorkMode.allCases, id: \.self) { mode in modeRow(mode) }
-            }.padding(.horizontal, 12)
-
-            DisclosureGroup("会话快捷操作") {
-                QuickSessionControls(model: model, sessions: model.sessions, compact: true).padding(.top, 8)
-            }.font(WorkType.body).padding(.horizontal, 22).padding(.top, 10)
-
-            if let countdown = model.countdownText {
-                HStack(spacing: 8) {
-                    TerminalIcon(name: "timer")
-                    Text(countdown).fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 0)
-                    Button("取消", action: model.cancelVisibleCountdown).buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
-                }.font(.system(size: 11, weight: .medium)).foregroundStyle(WorkStyle.blue)
-                    .padding(12).background(WorkStyle.selection, in: RoundedRectangle(cornerRadius: 0))
-                    .padding(.horizontal, 16).padding(.top, 12)
-            }
-            if model.pending != nil || model.error {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(model.message).font(.system(size: 11)).foregroundStyle(model.error ? Color.red : WorkStyle.muted)
-                        .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
-                    HStack {
-                        if model.pending != nil { Button("打开系统设置", action: model.openLockSettings).workKeyboardFocus(radius: 0) }
-                        Button("重新检查") { model.error = false; Task { await model.refresh() } }.workKeyboardFocus(radius: 0)
-                    }.buttonStyle(WorkButtonStyle()).focusEffectDisabled()
-                }.padding(16)
-            }
-            HStack(spacing: 6) {
-                TerminalIcon(name: protected ? "lock.shield" : "lock.trianglebadge.exclamationmark")
-                Text(model.requiresImmediateLock ? (protected ? "即时密码保护已开启" : "等待核验密码保护") : "跟随系统锁屏设置")
-                Spacer()
-                Text(model.display.sessionLocked == true ? "当前已锁定" : "").foregroundStyle(WorkStyle.muted)
-            }.font(.system(size: 10)).foregroundStyle(WorkStyle.muted)
-                .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 16)
-
-            Rectangle().fill(WorkStyle.line.opacity(0.6)).frame(height: 1).padding(.horizontal, 20)
-            HStack {
-                TerminalLabel(displaySummary, systemImage: "laptopcomputer").font(.system(size: 10)).foregroundStyle(WorkStyle.muted)
-                Spacer()
-                Button { Task { await model.choose(.normal, sleep: true) } } label: {
-                    TerminalLabel("立即休眠", systemImage: "power").font(.system(size: 11, weight: .medium))
-                }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(model.busy)
-            }.padding(.horizontal, 20).padding(.vertical, 14)
-        }
-        .frame(width: 344).fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(WorkStyle.ink)
-        .background { if standalone { WorkWindowMaterial() } }
-        .tint(WorkStyle.blue).preferredColorScheme(.light)
+    init(model: AppModel, standalone: Bool = false, height: CGFloat = 560, closePopover: (() -> Void)? = nil) {
+        self.model = model; self.sessions = model.sessions
+        self.standalone = standalone; self.height = height; self.closePopover = closePopover
     }
-    private func modeRow(_ mode: WorkMode) -> some View {
+
+    private var protected: Bool { model.snapshot?.lockPolicy == .immediate }
+    private var statusColor: Color {
+        model.error || model.pending != nil ? TerminalStyle.warning : model.verifiedWork ? TerminalStyle.accent : TerminalStyle.amber
+    }
+    private var title: String {
+        model.busy ? "正在切换" : model.pending != nil ? "等待确认" : model.error ? "需要检查" : model.active?.title ?? "读取状态"
+    }
+    private var sessionSummary: String {
+        if let countdown = model.countdownText { return countdown }
+        if sessions.isActive { return sessions.status }
+        if model.triggerOwnedMode != nil { return model.triggerSummary }
+        return model.verifiedWork ? "手动结束" : "尚未开始会话"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            rule
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    status
+                    modes
+                    PowerControls(model: model, compact: true)
+                        .padding(12).background(.white)
+                        .overlay(Rectangle().strokeBorder(TerminalStyle.line.opacity(0.6)))
+                    quickActions
+                    if let countdown = model.countdownText {
+                        HStack(spacing: 8) {
+                            TerminalIcon(name: "timer", size: 14)
+                            Text(countdown).fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Button("取消", action: model.cancelVisibleCountdown)
+                                .buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
+                        }.font(.system(size: 11)).foregroundStyle(TerminalStyle.accent)
+                            .padding(10).background(TerminalStyle.selection)
+                    }
+                    if model.pending != nil || model.error { feedback }
+                }.padding(16).terminalReveal()
+            }.frame(maxWidth: .infinity)
+            rule
+            footer
+        }.frame(width: 360, height: height)
+            .background(TerminalStyle.paper)
+            .foregroundStyle(TerminalStyle.ink).tint(TerminalStyle.accent)
+            .buttonStyle(WorkButtonStyle()).focusEffectDisabled().preferredColorScheme(.light)
+            .onExitCommand { if !standalone { closePopover?() } }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("WakeMac").font(.system(size: 20, weight: .semibold))
+                Text("快捷控制").font(.system(size: 10)).foregroundStyle(TerminalStyle.muted)
+            }
+            Spacer()
+            if let battery = model.battery {
+                TerminalLabel("\(battery.percent)%", systemImage: battery.onBattery ? "battery.75percent" : "battery.100percent.bolt")
+                    .font(TerminalStyle.mono(11)).foregroundStyle(TerminalStyle.muted)
+            }
+            Button { model.openPreferences?() } label: {
+                TerminalIcon(name: "arrow.right", size: 16).frame(width: 30, height: 32)
+                    .background(.white).overlay(Rectangle().strokeBorder(TerminalStyle.line.opacity(0.6)))
+            }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
+                .accessibilityLabel("打开主窗口").help("打开 WakeMac 主窗口")
+        }.padding(.horizontal, 16).padding(.vertical, 12)
+    }
+
+    private var status: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(title).font(.system(size: 28, weight: .semibold))
+                    .lineLimit(1).minimumScaleFactor(0.8).contentTransition(.opacity)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+                if model.busy { ProgressView().controlSize(.small) }
+                else { Rectangle().fill(statusColor).frame(width: 8, height: 8).accessibilityHidden(true) }
+            }
+            Text(model.headline).font(.system(size: 11)).foregroundStyle(TerminalStyle.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                TerminalIcon(name: "timer", size: 12)
+                Text(sessionSummary).font(.system(size: 11)).lineLimit(2)
+            }.foregroundStyle(model.verifiedWork ? TerminalStyle.accent : TerminalStyle.muted)
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(TerminalGrid())
+            .overlay(Rectangle().strokeBorder(TerminalStyle.line.opacity(0.6)))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: title)
+    }
+
+    private var modes: some View {
+        HStack(spacing: 0) {
+            ForEach(WorkMode.allCases, id: \.self) { mode in
+                modeButton(mode)
+                if mode != WorkMode.allCases.last { Rectangle().fill(TerminalStyle.line.opacity(0.6)).frame(width: 1) }
+            }
+        }.frame(height: 58).background(.white)
+            .overlay(Rectangle().strokeBorder(TerminalStyle.line.opacity(0.6)))
+            .animation(reduceMotion ? nil : .smooth(duration: 0.24), value: model.active)
+    }
+
+    private func modeButton(_ mode: WorkMode) -> some View {
         let selected = model.active == mode && model.pending == nil && !model.error
         return Button {
             model.quitWhenReady = false
             Task { await model.choose(mode) }
         } label: {
-            HStack(spacing: 12) {
-                TerminalIcon(name: rowIcon(mode)).font(.system(size: 17, weight: .regular))
-                    .frame(width: 32, height: 32)
-                    .foregroundStyle(selected ? WorkStyle.blue : WorkStyle.muted)
-                    .background(selected ? WorkStyle.blue.opacity(0.13) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 0))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(mode.title).font(.system(size: 13, weight: .semibold))
-                    Text(subtitle(mode)).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
+            VStack(spacing: 5) {
+                TerminalIcon(name: mode == .background ? "laptopcomputer" : mode == .desk ? "display" : "moon.zzz", size: 16)
+                Text(mode.title).font(.system(size: 12, weight: .medium))
+            }.frame(maxWidth: .infinity).frame(height: 58)
+                .foregroundStyle(selected ? TerminalStyle.accent : TerminalStyle.ink)
+                .background {
+                    if selected { TerminalStyle.selection.matchedGeometryEffect(id: "quick-mode", in: modeSelection) }
                 }
-                Spacer(minLength: 0)
-                TerminalIcon(name: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 16)).foregroundStyle(selected ? WorkStyle.blue : WorkStyle.line)
-            }.foregroundStyle(WorkStyle.ink)
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(selected ? WorkStyle.blue.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 0))
-                .overlay(RoundedRectangle(cornerRadius: 0).strokeBorder(Color.clear))
-                .contentShape(RoundedRectangle(cornerRadius: 0))
-        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(model.busy)
+                .overlay(alignment: .bottom) {
+                    if selected { Rectangle().fill(TerminalStyle.accent).frame(width: 32, height: 2) }
+                }.contentShape(Rectangle())
+        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
+            .disabled(model.busy || (mode == .background && model.helperStatus != .enabled))
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
-    private func rowIcon(_ mode: WorkMode) -> String {
-        switch mode { case .background: "laptopcomputer"; case .desk: "display"; case .normal: "moon.zzz" }
+
+    private var quickActions: some View {
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { expanded.toggle() }
+            } label: {
+                HStack {
+                    Text("会话快捷操作").font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    TerminalIcon(name: expanded ? "chevron.up" : "chevron.down", size: 12)
+                }.padding(.vertical, 8).contentShape(Rectangle())
+            }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
+                .accessibilityValue(expanded ? "已展开" : "已收起")
+            if expanded {
+                QuickSessionControls(model: model, sessions: sessions, compact: true)
+                    .padding(.top, 10).padding(.bottom, 4)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))
+            }
+        }.padding(.horizontal, 2)
     }
-    private func subtitle(_ mode: WorkMode) -> String {
-        switch mode {
-        case .background: "合上屏幕，任务继续"
-        case .desk: "保持运行，闲时熄屏"
-        case .normal: "恢复休眠，安心离开"
-        }
+
+    private var feedback: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            WorkNote(text: model.message, icon: "exclamationmark.circle")
+            HStack {
+                if model.pending != nil {
+                    Button("打开系统设置", action: model.openLockSettings).workKeyboardFocus(radius: 0)
+                }
+                Button("重新检查") { model.error = false; Task { await model.refresh() } }.workKeyboardFocus(radius: 0)
+            }
+        }.padding(12).background(.white)
+            .overlay(Rectangle().strokeBorder(TerminalStyle.warning.opacity(0.5)))
     }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                TerminalIcon(name: protected ? "lock.shield" : "lock.trianglebadge.exclamationmark", size: 12)
+                    .frame(width: 22)
+                Text(model.lockSummary).font(.system(size: 10))
+                Spacer(minLength: 0)
+                if model.display.sessionLocked == true { Text("已锁定").font(.system(size: 10)) }
+            }.foregroundStyle(TerminalStyle.muted)
+            HStack {
+                HStack(spacing: 10) {
+                    TerminalIcon(name: "laptopcomputer", size: 16).frame(width: 22)
+                    Text(displaySummary)
+                }.font(.system(size: 10)).foregroundStyle(TerminalStyle.muted)
+                Spacer(minLength: 0)
+                Button { Task { await model.choose(.normal, sleep: true) } } label: {
+                    TerminalLabel("立即休眠", systemImage: "power")
+                }.workKeyboardFocus(radius: 0).disabled(model.busy)
+            }
+        }.padding(.horizontal, 16).padding(.vertical, 12).background(.white)
+    }
+
+    private var rule: some View { Rectangle().fill(TerminalStyle.line.opacity(0.6)).frame(height: 1) }
     private var displaySummary: String {
         model.display.lidClosed.map { $0 ? "上盖已合上" : "上盖已打开" } ?? "上盖状态未知"
     }

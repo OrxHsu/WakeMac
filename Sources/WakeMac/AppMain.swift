@@ -297,19 +297,20 @@ extension WorkMode {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
         popover.behavior = .transient
-        let popoverHost = NSHostingController(rootView: ControlPanel(model: model))
+        let quickHeight = min(560, max(360, (NSScreen.main?.visibleFrame.height ?? 800) - 80))
+        let popoverHost = NSHostingController(rootView: ControlPanel(model: model, height: quickHeight, closePopover: { [weak self] in self?.popover.performClose(nil) }))
         popoverHost.sizingOptions = [.preferredContentSize]
         popover.contentViewController = popoverHost
-        popover.contentSize = NSSize(width: 344, height: 380)
+        popover.contentSize = NSSize(width: 360, height: quickHeight)
         item.button?.target = self
         item.button?.action = #selector(togglePopover)
-        panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 344, height: 410), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: quickHeight), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
         panel.titlebarAppearsTransparent = false
         panel.titleVisibility = .visible
         panel.backgroundColor = .windowBackgroundColor
         panel.title = "WakeMac · 快捷面板"
         panel.isReleasedWhenClosed = false
-        let panelHost = NSHostingView(rootView: ControlPanel(model: model, standalone: true))
+        let panelHost = NSHostingView(rootView: ControlPanel(model: model, standalone: true, height: quickHeight))
         panelHost.sizingOptions = [.minSize, .intrinsicContentSize]
         panel.contentView = panelHost
         panel.center()
@@ -398,7 +399,7 @@ extension WorkMode {
             // A landscape starting size leaves room for the sidebar and control rows.
             // AppKit owns resizing; content must not replace the initial window size.
             let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? NSSize(width: 1200, height: 800)
-            let size = NSSize(width: min(1060, visible.width - 48), height: min(740, visible.height - 64))
+            let size = NSSize(width: min(1160, visible.width - 48), height: min(700, visible.height - 64))
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.contentMinSize = NSSize(width: 860, height: 630)
             window.title = "WakeMac"; window.isReleasedWhenClosed = false

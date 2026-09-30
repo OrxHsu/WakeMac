@@ -78,7 +78,7 @@ struct PowerHomeView: View {
                             .padding(.leading, 4).accessibilityHidden(true)
                     }
                 }.padding(.horizontal, 24).padding(.vertical, 20)
-            }.frame(height: 228).background(TerminalGrid())
+            }.frame(height: 204).background(TerminalGrid())
             HStack(spacing: 14) {
                 Text("结束条件").font(.system(size: 12, weight: .semibold))
                 Rectangle().fill(TerminalStyle.line).frame(width: 1, height: 21)
