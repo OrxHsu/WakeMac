@@ -1,6 +1,6 @@
 // swift-tools-version: 6.0
 import PackageDescription
-let package = Package(name: "WakeMac", platforms: [.macOS(.v14)], products: [
+let package = Package(name: "WakeMac", platforms: [.macOS(.v15)], products: [
     .executable(name: "WakeMac", targets: ["WakeMac"]),
     .executable(name: "WakeMacPowerHelper", targets: ["WakeMacPowerHelper"])
 ], targets: [

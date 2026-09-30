@@ -9,9 +9,9 @@ extension WorkMode {
     var icon: String { switch self { case .background: "moon.stars"; case .desk: "laptopcomputer"; case .normal: "lock.shield" } }
     var detail: String {
         switch self {
-        case .background: "合盖继续运行，熄屏后保留锁屏保护"
-        case .desk: "保持运行，闲时熄屏锁定，使用前解锁"
-        case .normal: "恢复合盖休眠，唤醒时要求认证"
+        case .background: "合盖继续运行，允许屏幕自动关闭"
+        case .desk: "保持运行，允许闲时熄屏"
+        case .normal: "恢复闲置与合盖休眠"
         }
     }
 }
@@ -31,6 +31,7 @@ extension WorkMode {
         automation.batteryEnabled = preferences.object(forKey: "BatteryProtection") as? Bool ?? true
         automation.batteryThreshold = min(50, max(5, preferences.object(forKey: "BatteryThreshold") as? Int ?? 20))
         menuLabelEnabled = preferences.object(forKey: "MenuLabel") as? Bool ?? true
+        requiresImmediateLock = preferences.object(forKey: "RequireImmediateLock") as? Bool ?? true
         if preferences.bool(forKey: "JobWasRunning") {
             record("上次退出时命令尚未确认结束；未重新运行命令，也未安排休眠。")
             preferences.set(false, forKey: "JobWasRunning")
@@ -43,6 +44,16 @@ extension WorkMode {
     @Published var now = Date()
     @Published var battery: BatteryReading?
     @Published var menuLabelEnabled = true
+    @Published private(set) var requiresImmediateLock = true
+    var lockRequirement: LockRequirement { requiresImmediateLock ? .immediate : .system }
+    var lockSummary: String { requiresImmediateLock ? "要求即时密码保护" : "跟随系统锁屏设置" }
+    func setRequireImmediateLock(_ enabled: Bool) async {
+        guard !busy else { return }
+        requiresImmediateLock = enabled
+        preferences.set(enabled, forKey: "RequireImmediateLock")
+        generation += 1; refreshID = nil
+        await refresh()
+    }
     @Published var convenienceMessage = ""
     @Published var helperMessage = ""
     @Published var triggerSummary = "自动触发尚未接管运行模式"
@@ -51,13 +62,16 @@ extension WorkMode {
     lazy var behavior = BehaviorPreferences(preferences: preferences)
     lazy var idlePolicy: IdlePolicyController = {
         let controller = IdlePolicyController(preferences: preferences)
-        controller.workingProvider = { [weak self] in self?.keepsAwake == true && self?.snapshot?.lockPolicy == .immediate }
+        controller.workingProvider = { [weak self] in self?.verifiedWork == true }
+        controller.immediateAuthentication = { [weak self] in self?.snapshot?.lockPolicy == .immediate }
         controller.allowsScreenSaver = { [weak self] in self?.sessions.effectivePreventScreenSaver != true && self?.sessions.screenSaverExceptionActive != true }
         controller.preflight = { [weak self] in
             guard let self, !self.busy else { return false }
             let revision = self.generation
             guard let current = try? await self.backend.snapshot() else { return false }
-            return self.generation == revision && !self.busy && current.lockPolicy == .immediate && current.idleSleepPrevented == true
+            guard self.generation == revision, !self.busy else { return false }
+            self.snapshot = current
+            return self.lockRequirement.accepts(current.lockPolicy) && current.idleSleepPrevented == true
         }
         return controller
     }()
@@ -98,7 +112,7 @@ extension WorkMode {
     var showPanel: (() -> Void)?
     var quitApplication: (() -> Void)?
     var lockInstruction: String {
-        return "三个模式都保留锁屏保护。请将系统设置 → 锁定屏幕 →「屏幕保护程序启动或显示器关闭后要求输入密码」设为「立即」。应用不会要求关闭密码保护，也不会自动解锁。"
+        return "当前要求即时密码保护。请在系统设置 → 锁定屏幕中，将显示器关闭或屏保启动后的密码要求设为「立即」；也可在 WakeMac 偏好设置中选择跟随系统设置。"
     }
     var headline: String {
         if busy { return "正在切换…" }
@@ -155,13 +169,13 @@ extension WorkMode {
             let current = try await backend.snapshot()
             guard generation == version, !busy, refreshID == id else { return }
             snapshot = current; observeDisplay(DisplayState.read())
-            if current.lockPolicy != .immediate && current.idleSleepPrevented == true {
+            if !lockRequirement.accepts(current.lockPolicy) && current.idleSleepPrevented == true {
                 refreshID = nil
                 await choose(.normal, automatic: true)
                 return
             }
-            active = WorkMode.allCases.first { current.matches($0) }
-            if let target = pending, current.lockPolicy == .immediate {
+            active = WorkMode.allCases.first { current.matches($0, lockRequirement: lockRequirement) }
+            if let target = pending, lockRequirement.accepts(current.lockPolicy) {
                 refreshID = nil
                 await choose(target)
                 return
@@ -193,7 +207,7 @@ extension WorkMode {
         snapshot = nil
         message = "正在应用并核验「\(mode.title)」…"; onUpdate?()
         let revision = automaticSleepRevision
-        let result = sleep ? await coordinator.sleep { [weak self] in
+        let result = sleep ? await coordinator.sleep(lockRequirement: lockRequirement) { [weak self] in
             guard let self else { return false }
             return await MainActor.run {
                 guard !automatic || self.automaticSleepRevision == revision else { return false }
@@ -205,26 +219,26 @@ extension WorkMode {
                 }
                 return true
             }
-        } : await coordinator.select(mode)
+        } : await coordinator.select(mode, lockRequirement: lockRequirement)
         switch result {
         case .active(let verified):
             do {
                 let current = try await backend.snapshot()
                 snapshot = current; observeDisplay(DisplayState.read())
-                guard current.matches(verified) else { throw ModeError("切换后状态发生变化：\n" + current.diagnostic) }
+                guard current.matches(verified, lockRequirement: lockRequirement) else { throw ModeError("切换后状态发生变化：\n" + current.diagnostic) }
                 active = verified
                 message = sleep ? "已向系统发送休眠请求。" : "系统状态已回读确认。"
             } catch { self.error = true; message = error.localizedDescription }
         case .sleepCancelled:
             do {
                 let current = try await backend.snapshot()
-                guard current.matches(.normal) else { throw ModeError("取消休眠后正常模式未通过核验。") }
+                guard current.matches(.normal, lockRequirement: lockRequirement) else { throw ModeError("取消休眠后正常模式未通过核验。") }
                 active = .normal; snapshot = current
                 message = "自动休眠已取消，当前为正常模式。"
             } catch { self.error = true; message = error.localizedDescription }
         case .needsLockPolicy(let target):
             pending = target; message = lockInstruction
-            if sleep { message += "\n设置完成后请再次点「立即锁定并休眠」，不会自动打断当前工作。" }
+            if sleep { message += "\n设置完成后请再次点「立即休眠」，不会自动打断当前工作。" }
             showPanel?()
         case .failed(let reason):
             error = true; message = reason; showPanel?()

@@ -396,7 +396,7 @@ struct SessionBehaviorOverride: Equatable {
     func chooseScreenSaverException() {
         let panel = NSOpenPanel(); panel.canChooseDirectories = false; panel.canChooseFiles = true
         panel.allowedContentTypes = [.applicationBundle]; panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "添加屏保例外"; panel.message = "此应用运行时暂停本应用的自动屏保，仍保留即时锁定保护。"
+        panel.prompt = "添加屏保例外"; panel.message = "此应用运行时暂停本应用的自动屏保，不会修改系统密码要求。"
         if panel.runModal() == .OK, let url = panel.url, let id = Bundle(url: url)?.bundleIdentifier,
            !id.isEmpty, !screenSaverExceptionBundleIDs.contains(id) { screenSaverExceptionBundleIDs.append(id) }
     }

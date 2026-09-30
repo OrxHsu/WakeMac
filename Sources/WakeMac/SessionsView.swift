@@ -161,7 +161,7 @@ struct SessionsView: View {
                 effectText("系统报告下载进度：" + percent.formatted(.number.precision(.fractionLength(0))) + "%")
             } else { effectText("未获得系统发布的下载百分比；仍按文件增长与稳定时长监测。") }
             secondsField("下载稳定时长", value: $controller.downloadStabilitySeconds)
-            WorkNote(text: "先观察文件实际增长，再等待所设时长稳定；临时下载后缀需重命名为完成文件。下载暂停也可能被视为稳定，重要下载请使用手动结束。")
+            WorkNote(text: "用于大文件下载：下载期间保持唤醒，完成后结束本次会话并恢复正常休眠。先观察文件增长，再等待完成重命名和稳定；网络暂停可能被视为稳定，重要下载请手动结束。")
         }
     }
     private func secondsField(_ title: String, value: Binding<Double>) -> some View {

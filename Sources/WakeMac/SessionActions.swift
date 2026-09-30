@@ -2,7 +2,7 @@ import Foundation
 import WakeMacCore
 
 extension AppModel {
-    var verifiedWork: Bool { !busy && !error && pending == nil && (active == .desk || active == .background) && keepsAwake && snapshot?.lockPolicy == .immediate }
+    var verifiedWork: Bool { !busy && !error && pending == nil && (active == .desk || active == .background) && keepsAwake && snapshot.map { lockRequirement.accepts($0.lockPolicy) } == true }
     func changeDisplayPrevention(_ enabled: Bool) async {
         if verifiedWork { sessions.setDisplayPrevention(enabled) }
         else { sessions.preventDisplaySleep = enabled }

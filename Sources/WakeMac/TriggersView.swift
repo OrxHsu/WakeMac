@@ -8,7 +8,7 @@ struct TriggersView: View {
     @State private var editing: TriggerRule?
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            WorkCard(title: "触发规则", subtitle: "条件满足时进入工作模式，条件结束时由会话恢复策略处理。所有规则默认关闭；系统锁定保护始终保留。") {
+            WorkCard(title: "触发规则", subtitle: "条件满足时进入工作模式，条件结束时由会话恢复策略处理。所有规则默认关闭；锁屏策略跟随偏好设置。") {
                 WorkToggle(title: "启用自动触发", detail: "暂停时保留规则设置，并停止自动匹配。", isOn: $controller.enabled)
                 HStack {
                     Text(controller.status).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
@@ -133,7 +133,7 @@ private struct TriggerRuleEditor: View {
                         Text("允许屏保").tag(Optional(false))
                     }
                 }
-                WorkNote(text: "覆盖仅在本规则控制工作模式时生效；系统锁定后亮屏与屏保保活会暂停，立即锁定保护保持开启。")
+                WorkNote(text: "覆盖仅在本规则控制工作模式时生效；系统锁定后亮屏与屏保保活会暂停，密码要求由所选锁屏策略决定。")
             }
             WorkToggle(title: "启用这条规则", detail: "启用后会开始自动匹配条件。", isOn: $rule.enabled)
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }

@@ -2,6 +2,12 @@ import Foundation
 
 public enum WorkMode: String, CaseIterable, Codable, Sendable { case background, desk, normal }
 public enum LockPolicy: Equatable, Sendable { case off, immediate, delayed, unknown }
+public enum LockRequirement: Sendable {
+    case immediate, system
+    public func accepts(_ policy: LockPolicy) -> Bool {
+        policy != .unknown && (self == .system || policy == .immediate)
+    }
+}
 public struct Snapshot: Equatable, Sendable {
     public var sleepDisabled: Bool?
     public var lockPolicy: LockPolicy
@@ -13,8 +19,8 @@ public struct Snapshot: Equatable, Sendable {
         self.idleSleepPrevented = idleSleepPrevented; self.displaySleepAllowed = displaySleepAllowed
         self.backgroundLeaseActive = backgroundLeaseActive
     }
-    public func matches(_ mode: WorkMode) -> Bool {
-        guard lockPolicy == .immediate, sleepDisabled == (mode == .background),
+    public func matches(_ mode: WorkMode, lockRequirement: LockRequirement = .immediate) -> Bool {
+        guard lockRequirement.accepts(lockPolicy), sleepDisabled == (mode == .background),
               backgroundLeaseActive == (mode == .background) else { return false }
         if mode == .normal { return idleSleepPrevented == false }
         return idleSleepPrevented == true && displaySleepAllowed == true
@@ -35,11 +41,11 @@ public actor ModeCoordinator {
     let backend: any ModeBackend
     private var busy = false
     public init(backend: any ModeBackend) { self.backend = backend }
-    public func select(_ mode: WorkMode) async -> TransitionResult { await transition(mode, sleep: false) }
-    public func sleep(shouldProceed: @escaping @Sendable () async -> Bool = { true }) async -> TransitionResult {
-        await transition(.normal, sleep: true, shouldProceed: shouldProceed)
+    public func select(_ mode: WorkMode, lockRequirement: LockRequirement = .immediate) async -> TransitionResult { await transition(mode, sleep: false, lockRequirement: lockRequirement) }
+    public func sleep(lockRequirement: LockRequirement = .immediate, shouldProceed: @escaping @Sendable () async -> Bool = { true }) async -> TransitionResult {
+        await transition(.normal, sleep: true, lockRequirement: lockRequirement, shouldProceed: shouldProceed)
     }
-    private func transition(_ mode: WorkMode, sleep: Bool, shouldProceed: @escaping @Sendable () async -> Bool = { true }) async -> TransitionResult {
+    private func transition(_ mode: WorkMode, sleep: Bool, lockRequirement: LockRequirement, shouldProceed: @escaping @Sendable () async -> Bool = { true }) async -> TransitionResult {
         guard !busy else { return .failed("正在切换模式，请稍候。") }
         busy = true
         defer { busy = false }
@@ -47,14 +53,14 @@ public actor ModeCoordinator {
             // Always release our inhibitors before a Normal-mode authentication handoff.
             if mode == .normal { try await backend.configurePower(.normal) }
             let before = try await backend.snapshot()
-            let desired: LockPolicy = .immediate
-            guard before.lockPolicy == desired else {
-                await backend.requestLockPolicy(desired)
+            if !lockRequirement.accepts(before.lockPolicy) {
+                guard lockRequirement == .immediate else { throw ModeError("无法核验系统锁屏设置；未启用工作模式。") }
+                await backend.requestLockPolicy(.immediate)
                 return .needsLockPolicy(mode)
             }
             if mode != .normal { try await backend.configurePower(mode) }
             let after = try await backend.snapshot()
-            guard after.matches(mode) else { throw ModeError("系统回读与所选模式不一致，未标记为成功。\n" + after.diagnostic) }
+            guard after.matches(mode, lockRequirement: lockRequirement) else { throw ModeError("系统回读与所选模式不一致，未标记为成功。\n" + after.diagnostic) }
             if sleep {
                 guard await shouldProceed() else { return .sleepCancelled }
                 try await backend.sleepNow()

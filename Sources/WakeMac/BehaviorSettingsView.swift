@@ -9,7 +9,7 @@ struct BehaviorSettingsView: View {
                 WorkToggle(title: "默认无限期", isOn: $behavior.defaultIndefinite)
                 if !behavior.defaultIndefinite { numberRow("默认时长", value: $behavior.defaultMinutes, range: 1...10080, suffix: "分钟") }
                 WorkToggle(title: "应用启动后开始新会话", detail: "每次创建默认会话，不恢复旧任务或命令。", isOn: $behavior.startAtLaunch)
-                WorkToggle(title: "系统唤醒后开始新会话", detail: "已有工作会话时不重复开始；保留立即锁屏保护。", isOn: $behavior.startAfterWake)
+                WorkToggle(title: "系统唤醒后开始新会话", detail: "已有工作会话时不重复开始；采用所选锁屏策略。", isOn: $behavior.startAfterWake)
             }
             WorkCard(title: "运行提醒") {
                 WorkToggle(title: "定期提醒会话仍在运行", isOn: $behavior.reminderEnabled)

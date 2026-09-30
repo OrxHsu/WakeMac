@@ -4,14 +4,14 @@ import ServiceManagement
 import WakeMacCore
 
 private enum PreferencePage: String, CaseIterable {
-    case power = "工作模式", sessions = "工作会话", triggers = "自动触发", automation = "自动收尾", command = "命令任务", settings = "偏好设置", advanced = "外观与脚本", history = "运行记录"
+    case power = "工作模式", sessions = "工作会话", triggers = "自动触发", automation = "自动收尾", command = "命令任务", settings = "偏好设置", advanced = "主题外观", history = "运行记录"
     var icon: String {
         switch self { case .power: "sun.max"; case .sessions: "hourglass"; case .triggers: "bolt.badge.clock"; case .automation: "timer"; case .command: "terminal"; case .settings: "slider.horizontal.3"; case .advanced: "paintbrush.pointed"; case .history: "clock.arrow.circlepath" }
     }
     var subtitle: String {
         switch self {
         case .power: "保持唤醒，合盖继续；工作结束后安心休眠。"
-        case .sessions: "按时间、应用或下载，决定这次工作的结束。"
+        case .sessions: "设置保持唤醒多久，或在应用退出、下载完成后自动结束。"
         case .triggers: "条件满足时自动开始，手动操作始终优先。"
         case .automation: "让工作按时结束，也照顾好电量。"
         case .command: "交给它一条命令，完成后安心休息。"
@@ -49,7 +49,7 @@ struct PreferencesView: View {
                         case .power: powerTab
                         case .sessions:
                             SessionsView(controller: model.sessions)
-                            IdlePolicyView(controller: model.idlePolicy)
+                            IdlePolicyView(controller: model.idlePolicy, immediateAuthentication: model.snapshot?.lockPolicy == .immediate)
                         case .triggers: TriggersView(controller: model.triggers)
                         case .automation: timerTab
                         case .command: taskTab
@@ -98,7 +98,7 @@ struct PreferencesView: View {
                     Circle().fill(model.error ? Color.orange : WorkStyle.blue).frame(width: 5, height: 5)
                     Text(model.headline).font(.system(size: 11, weight: .medium))
                 }
-                Label("锁屏保护始终保留", systemImage: "lock.shield").font(.system(size: 10))
+                Label(model.lockSummary, systemImage: model.requiresImmediateLock ? "lock.shield" : "gearshape").font(.system(size: 10))
                     .foregroundStyle(WorkStyle.muted)
             }.padding(20)
         }.frame(width: 174).frame(maxHeight: .infinity).background(WorkGlassBackground(radius: 22))
@@ -288,6 +288,16 @@ struct PreferencesView: View {
                 WorkNote(text: model.helperStatus == .enabled ? "合盖服务已授权，可以选择后台工作。" : model.helperMessage.isEmpty ? "合盖服务尚未授权。" : model.helperMessage)
                 WorkNote(text: "切换回正常模式或退出应用会恢复休眠；异常断线和心跳超时由服务自动恢复。")
             }
+            WorkCard(title: "锁屏与密码", subtitle: "选择 WakeMac 核验工作模式时采用的锁屏策略。") {
+                WorkToggle(title: "要求即时密码保护", detail: "默认开启。关闭后跟随 macOS 的密码要求，可使用系统设置的延迟或不要求密码。", isOn: Binding(get: { model.requiresImmediateLock }, set: { enabled in Task { await model.setRequireImmediateLock(enabled) } }))
+                    .disabled(model.busy)
+                HStack {
+                    Text(model.lockSummary).font(WorkType.body).foregroundStyle(WorkStyle.muted)
+                    Spacer()
+                    Button("打开锁屏设置", action: model.openLockSettings)
+                }
+                WorkNote(text: "WakeMac 不修改系统密码要求，也不解锁已锁定的 Mac。系统设为不要求密码时，熄屏后返回桌面也不再要求密码。")
+            }
             WorkCard(title: "日常使用") {
                 WorkToggle(title: "菜单栏显示模式和倒计时", isOn: Binding(get: { model.menuLabelEnabled }, set: model.setMenuLabel))
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
@@ -339,6 +349,7 @@ struct PreferencesView: View {
             HStack {
                 WorkNote(text: "退出前会恢复正常休眠。", icon: "power")
                 Spacer()
+                Button("提交问题") { if let url = URL(string: "https://github.com/OrxHsu/WakeMac/issues/new") { NSWorkspace.shared.open(url) } }
                 Button("退出 WakeMac") { Task { await model.requestQuit() } }.disabled(model.busy)
             }
             if model.jobRunning { WorkNote(text: "命令仍在运行，退出时会等待任务结束。") }

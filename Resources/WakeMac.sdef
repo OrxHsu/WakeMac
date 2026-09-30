@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE dictionary SYSTEM "file://localhost/System/Library/DTDs/sdef.dtd">
 <dictionary title="WakeMac Scripting">
-  <suite name="WakeMac" code="WMac" description="Native work sessions with lock protection.">
+  <suite name="WakeMac" code="WMac" description="Native work sessions with configurable lock verification.">
     <command name="start session" code="WMacStar" description="Start a verified desktop or closed-lid session.">
       <cocoa class="WakeMacStartSessionCommand"/>
       <parameter name="mode" code="mode" type="text" optional="yes" description="desktop (default) or background"><cocoa key="mode"/></parameter>
@@ -10,25 +10,25 @@
     </command>
     <command name="end session" code="WMacStop" description="Restore verified normal sleep."><cocoa class="WakeMacEndSessionCommand"/><result type="text"/></command>
     <command name="session status" code="WMacStat" description="Read verified mode status."><cocoa class="WakeMacSessionStatusCommand"/><result type="text"/></command>
-    <command name="session is active" code="WMacActv" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="session is active" code="WMacActv" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
     <command name="session time remaining" code="WMacRmng" description="Seconds remaining; 0 indefinite, -1 rule, -2 app/process/download, -3 inactive."><cocoa class="WakeMacControlCommand"/><result type="integer"/></command>
-    <command name="display sleep allowed" code="WMacDsOK" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="allow display sleep" code="WMacDsOn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="prevent display sleep" code="WMacDsNo" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="screen saver allowed" code="WMacSsOK" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="allow screen saver" code="WMacSsOn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="prevent screen saver" code="WMacSsNo" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="closed display mode enabled" code="WMacClOK" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="enable closed display mode" code="WMacClOn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="disable closed display mode" code="WMacClNo" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="session is trigger" code="WMacIsTr" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="triggers are enabled" code="WMacTrOK" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="enable triggers" code="WMacTrOn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="disable triggers" code="WMacTrNo" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="drive alive is enabled" code="WMacDaOK" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
-    <command name="enable drive alive" code="WMacDaOn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="disable drive alive" code="WMacDaNo" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
-    <command name="extend session" code="WMacExtn" description="Native session control; immediate lock protection remains enabled."><cocoa class="WakeMacControlCommand"/>
+    <command name="display sleep allowed" code="WMacDsOK" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="allow display sleep" code="WMacDsOn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="prevent display sleep" code="WMacDsNo" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="screen saver allowed" code="WMacSsOK" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="allow screen saver" code="WMacSsOn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="prevent screen saver" code="WMacSsNo" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="closed display mode enabled" code="WMacClOK" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="enable closed display mode" code="WMacClOn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="disable closed display mode" code="WMacClNo" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="session is trigger" code="WMacIsTr" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="triggers are enabled" code="WMacTrOK" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="enable triggers" code="WMacTrOn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="disable triggers" code="WMacTrNo" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="drive alive is enabled" code="WMacDaOK" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="boolean"/></command>
+    <command name="enable drive alive" code="WMacDaOn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="disable drive alive" code="WMacDaNo" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/><result type="text"/></command>
+    <command name="extend session" code="WMacExtn" description="Native session control; uses the selected lock verification policy."><cocoa class="WakeMacControlCommand"/>
       <parameter name="for minutes" code="mins" type="integer"><cocoa key="minutes"/></parameter><result type="text"/></command>
   </suite>
 </dictionary>

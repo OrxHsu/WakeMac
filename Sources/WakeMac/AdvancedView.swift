@@ -25,7 +25,7 @@ struct AdvancedView: View {
                 Text("tell application \"WakeMac\"\n    start session mode \"desktop\" for minutes 30\n    session status\n    -- end session\nend tell")
                     .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12).background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: WorkStyle.inputRadius))
-                WorkNote(text: "支持会话启停、延长、剩余时间、显示器与屏保、合盖、触发器和磁盘保活控制。background 需要已批准的合盖服务；所有命令保留锁屏保护。")
+                WorkNote(text: "支持会话启停、延长、剩余时间、显示器与屏保、合盖、触发器和磁盘保活控制。background 需要已批准的合盖服务；所有命令采用偏好设置中的锁屏策略。")
                 DisclosureGroup("更多脚本命令") {
                     Text("session is active\nsession time remaining\nextend session for minutes 15\nprevent display sleep\nallow display sleep\nprevent screen saver\nallow screen saver\nenable closed display mode\ndisable closed display mode\ntriggers are enabled\nenable triggers\ndisable triggers\nenable drive alive\ndisable drive alive")
                         .font(.system(size: 11, design: .monospaced)).textSelection(.enabled).padding(.top, 8)

@@ -11,6 +11,7 @@ import WakeMacCore
     @Published private(set) var status = "仅在已核验的工作状态中生效。"
     var workingProvider: (() -> Bool)?
     var allowsScreenSaver: (() -> Bool)?
+    var immediateAuthentication: () -> Bool = { true }
     var preflight: () async -> Bool = { true }
     var unlockedProvider: () -> Bool = NativeSessionEffects.isUnlocked
     var idleProvider: () -> Double = { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!) }
@@ -45,14 +46,14 @@ import WakeMacCore
         if idle < screenSaverMinutes * 60 { saverFired = false }
         running = true; defer { running = false }
         do {
-            if lockEnabled, idle >= lockMinutes * 60, !lockFired {
-                guard await preflight(), workingProvider?() == true, unlockedProvider(), lockEnabled, idleProvider() >= lockMinutes * 60 else { return }
+            if lockEnabled, immediateAuthentication(), idle >= lockMinutes * 60, !lockFired {
+                guard await preflight(), immediateAuthentication(), workingProvider?() == true, unlockedProvider(), lockEnabled, idleProvider() >= lockMinutes * 60 else { return }
                 // The caller requires verified immediate authentication. Sleep the display
                 // instead of ever modifying the password requirement or unlocking.
                 try await lockAction(); lockFired = true; status = "已请求熄屏锁定；系统保活会话仍继续。"
             } else if screenSaverEnabled, allowsScreenSaver?() != false, idle >= screenSaverMinutes * 60, !saverFired {
                 guard await preflight(), workingProvider?() == true, unlockedProvider(), screenSaverEnabled, allowsScreenSaver?() != false, idleProvider() >= screenSaverMinutes * 60 else { return }
-                try await screenSaverAction(); saverFired = true; status = "已启动系统屏保，保留立即认证保护。"
+                try await screenSaverAction(); saverFired = true; status = "已启动系统屏保；密码要求跟随系统设置。"
             }
         } catch { status = error.localizedDescription }
     }

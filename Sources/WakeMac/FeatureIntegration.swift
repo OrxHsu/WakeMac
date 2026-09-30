@@ -11,7 +11,7 @@ extension AppModel {
     }
     func makeSessionController() -> SessionController {
         let controller = SessionController(preferences: preferences, effects: sessionEffects)
-        controller.workingProvider = { [weak self] in self?.keepsAwake == true && self?.snapshot?.lockPolicy == .immediate }
+        controller.workingProvider = { [weak self] in self?.verifiedWork == true }
         controller.onBegin = { [weak self] mode in
             guard let self, !self.busy else { return false }
             self.suppressCurrentTriggers()

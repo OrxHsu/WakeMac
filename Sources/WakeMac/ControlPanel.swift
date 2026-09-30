@@ -97,9 +97,9 @@ struct ControlPanel: View {
             }
             HStack(spacing: 6) {
                 Image(systemName: protected ? "lock.shield" : "lock.trianglebadge.exclamationmark")
-                Text(protected ? "锁屏保护已开启" : "等待核验锁屏保护")
+                Text(model.requiresImmediateLock ? (protected ? "即时密码保护已开启" : "等待核验密码保护") : "跟随系统锁屏设置")
                 Spacer()
-                Text("解锁后可操作").foregroundStyle(WorkStyle.muted)
+                Text(model.display.sessionLocked == true ? "当前已锁定" : "").foregroundStyle(WorkStyle.muted)
             }.font(.system(size: 10)).foregroundStyle(WorkStyle.muted)
                 .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 16)
 
