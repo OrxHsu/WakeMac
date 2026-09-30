@@ -117,8 +117,12 @@ struct WorkNote: View {
     let text: String
     var icon = "info.circle"
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            TerminalIcon(name: icon).padding(.top, 1)
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            TerminalIcon(name: icon).frame(width: 22)
+                .alignmentGuide(.firstTextBaseline) { dimensions in
+                    // Align the glyph's optical center with the first line's cap height.
+                    dimensions.height / 2 + NSFont.systemFont(ofSize: 11).capHeight / 2
+                }
             Text(text).fixedSize(horizontal: false, vertical: true)
         }.font(WorkType.caption).foregroundStyle(WorkStyle.muted)
     }

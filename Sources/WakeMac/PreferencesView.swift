@@ -240,17 +240,15 @@ struct PreferencesView: View {
                 .background(TerminalStyle.silver.opacity(0.45))
             Rectangle().fill(WorkStyle.line).frame(height: 1)
             HStack(alignment: .top, spacing: 8) {
-                Text("❯").font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(WorkStyle.blue).frame(width: 18).padding(.top, 1)
+                Text("❯").font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundStyle(WorkStyle.blue).frame(width: 18)
                     .accessibilityHidden(true)
                 ZStack(alignment: .topLeading) {
                     if command.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("# 在这里输入命令，支持多行")
-                            Text("# 成功后倒计时休眠，失败时保留现场")
-                        }.font(.system(size: 12, design: .monospaced))
+                        Text("# 在这里输入命令，支持多行\n# 成功后倒计时休眠，失败时保留现场")
+                            .font(.system(size: 13, design: .monospaced))
                             .foregroundStyle(TerminalStyle.steel)
-                            .padding(.leading, 5).padding(.top, 1)
+                            .padding(.leading, 5)
                             .allowsHitTesting(false).accessibilityHidden(true)
                     }
                     TextEditor(text: $command).font(.system(size: 13, design: .monospaced))
