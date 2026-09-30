@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 OrxHsu
+
 import SwiftUI
 
 /// One geometric outline family: rounded strokes, no filled silhouettes or pixel grid.

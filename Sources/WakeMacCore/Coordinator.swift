@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 OrxHsu
+
 import Foundation
 
 public enum WorkMode: String, CaseIterable, Codable, Sendable { case background, desk, normal }

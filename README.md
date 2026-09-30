@@ -6,7 +6,7 @@
 
 [![Release](https://img.shields.io/github/v/release/OrxHsu/WakeMac)](https://github.com/OrxHsu/WakeMac/releases/latest)
 [![macOS compatibility](https://github.com/OrxHsu/WakeMac/actions/workflows/compatibility.yml/badge.svg)](https://github.com/OrxHsu/WakeMac/actions/workflows/compatibility.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 原生 macOS 菜单栏应用：保持唤醒、合盖运行、按条件结束会话、自动触发及命令完成后休眠。**无需安装 Amphetamine 或 Power Protect**，没有第三方 Swift 库依赖。界面目前为简体中文，采用浅色白银、克莱因蓝与少量橙黄，统一几何图标、控件和动效。
 
@@ -15,6 +15,8 @@
 ## 下载与安装
 
 **[下载 WakeMac v1.0.0](https://github.com/OrxHsu/WakeMac/releases/tag/v1.0.0)** · [更新记录](CHANGELOG.md)
+
+当前下载为 GPL-3.0-only 的构建 31，替代已撤下的 MIT 构建 30。版本号保持 1.0.0；请重新下载并核对校验文件。
 
 - 系统：**macOS 15 或更新版本**。
 - 芯片：**Apple Silicon（M 系列）**；不支持 Intel 或 macOS 14。
@@ -109,4 +111,8 @@ WAKEMAC_SIGN_IDENTITY='你的签名证书名称或 SHA-1' ./scripts/build-app.sh
 
 ## License
 
-[MIT](LICENSE)。随包字体使用独立的 [SIL Open Font License](Assets/Licenses/README.md)。
+当前重新发布的 **v1.0.0（构建 31）** 采用 **[GNU GPL v3，仅第 3 版（GPL-3.0-only）](LICENSE)**。允许使用、修改和商业分发；分发受 GPL 覆盖的修改版或二进制时，需要遵守对应源码提供、相同许可和版权声明等要求。软件不提供担保，具体以许可正文为准。
+
+此前发布的 [v1.0.0（构建 30）及更早代码](https://github.com/OrxHsu/WakeMac/blob/1df06bb03005f22ca30f8753965ca9015cc9339e/LICENSE) 使用 MIT。旧 Release 已撤下，同名版本以 GPL v3 重新发布；已授予的 MIT 权利仍有效，不能通过撤下发布或修改标签追溯收回。
+
+版权及资源范围见 [NOTICE](NOTICE)。随包字体继续采用独立的 [SIL Open Font License](Assets/Licenses/README.md)。

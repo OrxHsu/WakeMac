@@ -6,7 +6,7 @@ body:
     id: version
     attributes:
       label: WakeMac 版本
-      placeholder: 例如 1.0.0（构建 30）
+      placeholder: 例如 1.0.0（构建 31）
     validations:
       required: true
   - type: input

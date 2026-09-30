@@ -1,0 +1,21 @@
+WakeMac
+Copyright (c) 2026 OrxHsu
+SPDX-License-Identifier: GPL-3.0-only
+
+This republished WakeMac 1.0.0 (build 31) is licensed under the
+GNU General Public License, version 3 only. See LICENSE for the full terms.
+You may use, modify and redistribute this software under those terms.
+This software is provided without warranty; see sections 15 and 16 of LICENSE.
+
+Corresponding source for the republished app:
+https://github.com/OrxHsu/WakeMac/tree/v1.0.0
+
+The original 1.0.0 (build 30) and earlier code were published under MIT.
+The original Release has been withdrawn. Existing MIT permissions are not
+revoked by withdrawal, replacement of the release or this license change.
+Original source and license remain in Git history at:
+https://github.com/OrxHsu/WakeMac/tree/1df06bb03005f22ca30f8753965ca9015cc9339e
+
+Bundled IBM Plex Mono fonts remain under the SIL Open Font License 1.1.
+See Assets/Licenses/IBMPlex-OFL-1.1.txt in the source distribution and
+Contents/Resources/Licenses/IBMPlex-OFL-1.1.txt in the application bundle.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 OrxHsu
+
 import XCTest
 @testable import WakeMacCore
 final class NativeStateTests: XCTestCase {

@@ -1,4 +1,6 @@
 #!/bin/zsh
+# SPDX-License-Identifier: GPL-3.0-only
+# Copyright (c) 2026 OrxHsu
 set -euo pipefail
 PROJECT_DIR="${0:A:h:h}"
 BUILD_DIR="${WAKEMAC_BUILD_DIR:-/tmp/wakemac-build}"
@@ -16,7 +18,8 @@ cp "$PROJECT_DIR/Resources/WakeMac.sdef" "$APP/Contents/Resources/WakeMac.sdef"
 mkdir -p "$APP/Contents/Resources/Fonts" "$APP/Contents/Resources/Licenses"
 rsync -a --delete "$PROJECT_DIR/Assets/Fonts/" "$APP/Contents/Resources/Fonts/"
 rsync -a --delete "$PROJECT_DIR/Assets/Licenses/" "$APP/Contents/Resources/Licenses/"
-cp "$PROJECT_DIR/LICENSE" "$APP/Contents/Resources/Licenses/WakeMac-MIT.txt"
+cp "$PROJECT_DIR/LICENSE" "$APP/Contents/Resources/Licenses/WakeMac-GPL-3.0.txt"
+cp "$PROJECT_DIR/NOTICE" "$APP/Contents/Resources/Licenses/WakeMac-NOTICE.txt"
 cp "$PROJECT_DIR/Assets/PowerTerminal.png" "$APP/Contents/Resources/PowerTerminal.png"
 codesign --force --options runtime --sign "${WAKEMAC_SIGN_IDENTITY:--}" --identifier local.orx.WakeMac.PowerHelper "$APP/Contents/MacOS/WakeMacPowerHelper"
 codesign --force --options runtime --sign "${WAKEMAC_SIGN_IDENTITY:--}" "$APP"
