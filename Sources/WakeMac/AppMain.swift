@@ -398,11 +398,12 @@ extension WorkMode {
             // A landscape starting size leaves room for the sidebar and control rows.
             // AppKit owns resizing; content must not replace the initial window size.
             let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.size ?? NSSize(width: 1200, height: 800)
-            let size = NSSize(width: min(1000, visible.width - 48), height: min(680, visible.height - 64))
+            let size = NSSize(width: min(1060, visible.width - 48), height: min(740, visible.height - 64))
             let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            window.contentMinSize = NSSize(width: 780, height: 630)
+            window.contentMinSize = NSSize(width: 860, height: 630)
             window.title = "WakeMac"; window.isReleasedWhenClosed = false
-            window.titlebarAppearsTransparent = false
+            window.appearance = NSAppearance(named: .aqua)
+            window.titlebarAppearsTransparent = true
             window.titleVisibility = .visible
             window.backgroundColor = .windowBackgroundColor
             let host = NSHostingView(rootView: PreferencesView(model: model, hotkeys: hotkeys, notifier: notifier))
@@ -427,6 +428,7 @@ extension WorkMode {
 @main struct WakeMacMain {
     @MainActor static func main() {
         let app = NSApplication.shared
+        TerminalStyle.registerFonts()
         let delegate = AppDelegate()
         app.delegate = delegate
         withExtendedLifetime(delegate) { app.run() }

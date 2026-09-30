@@ -13,7 +13,7 @@ struct TriggersView: View {
                 HStack {
                     Text(controller.status).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                     Spacer()
-                    Button("新建规则") { editing = TriggerRule() }.buttonStyle(WorkButtonStyle(prominent: true))
+                    Button("新建规则") { editing = TriggerRule() }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0)
                 }
                 if controller.rules.isEmpty { Text("添加一条规则，选择触发条件并保存，然后主动启用。") .font(.system(size: 12)).foregroundStyle(WorkStyle.muted) }
                 ForEach(controller.rules) { rule in
@@ -21,13 +21,13 @@ struct TriggersView: View {
                         HStack(alignment: .top) {
                             WorkToggle(title: rule.name, detail: (rule.mode == .background ? "后台工作" : "桌面工作") + " · " + (rule.combination == .all ? "所有条件" : "任一条件"), isOn: Binding(get: { rule.enabled }, set: { controller.setEnabled(rule.id, $0) }))
                             Spacer()
-                            Button("编辑") { editing = rule }.buttonStyle(WorkButtonStyle())
-                            Button("删除", role: .destructive) { controller.remove(rule.id) }.buttonStyle(WorkButtonStyle())
+                            Button("编辑") { editing = rule }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
+                            Button("删除", role: .destructive) { controller.remove(rule.id) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                         }
                         ForEach(rule.conditions) { condition in
                             let reading = controller.observations[condition.id]
                             HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: reading?.state == .matched ? "checkmark.circle.fill" : reading?.state == .unknown ? "questionmark.circle" : "circle")
+                                TerminalIcon(name: reading?.state == .matched ? "checkmark.circle.fill" : reading?.state == .unknown ? "questionmark.circle" : "circle")
                                     .foregroundStyle(reading?.state == .matched ? WorkStyle.blue : WorkStyle.muted)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(conditionTitle(condition))
@@ -41,7 +41,7 @@ struct TriggersView: View {
             }
             WorkCard(title: "当前观测", subtitle: "只读诊断不会切换电源模式。CPU 第一次采样不可判定；再次刷新后显示两次采样间的使用率。") {
                 HStack {
-                    Button("刷新观测") { Task { await controller.refreshDiagnostics() } }.buttonStyle(WorkButtonStyle())
+                    Button("刷新观测") { Task { await controller.refreshDiagnostics() } }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                     if let date = controller.lastObservedAt { Text(date.formatted(date: .omitted, time: .standard)).font(.system(size: 11)).foregroundStyle(WorkStyle.muted) }
                 }
                 if controller.rules.contains(where: { $0.conditions.contains(where: { $0.kind == .wifiSSID }) }) { permissionRow(kind: .wifiSSID, title: "Wi-Fi 网络名称", explanation: "macOS 需要定位权限才会提供网络名称。拒绝或未授权时不会匹配。") }
@@ -66,8 +66,8 @@ struct TriggersView: View {
             Text(title).font(WorkType.controlLabel)
             Text(explanation).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
             HStack {
-                Button("请求授权") { controller.requestPermission(for: kind) }.buttonStyle(WorkButtonStyle())
-                Button("打开权限设置") { controller.openPermissionSettings(for: kind) }.buttonStyle(WorkButtonStyle())
+                Button("请求授权") { controller.requestPermission(for: kind) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
+                Button("打开权限设置") { controller.openPermissionSettings(for: kind) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             }
         }
     }
@@ -82,24 +82,18 @@ private struct TriggerRuleEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("编辑触发规则").font(WorkType.dialogTitle).accessibilityAddTraits(.isHeader)
-            TextField("规则名称", text: $rule.name).textFieldStyle(.roundedBorder)
+            TextField("规则名称", text: $rule.name).textFieldStyle(TerminalTextFieldStyle())
             HStack {
-                Picker("进入模式", selection: $rule.mode) {
-                    Text("桌面工作").tag(WorkMode.desk)
-                    Text("后台工作").tag(WorkMode.background)
-                }
-                Picker("组合条件", selection: $rule.combination) {
-                    Text("所有条件都满足").tag(TriggerCombination.all)
-                    Text("任一条件满足").tag(TriggerCombination.any)
-                }
+                TerminalPicker("进入模式", selection: $rule.mode, choices: [TerminalChoice("桌面工作", .desk), TerminalChoice("后台工作", .background)])
+                TerminalPicker("组合条件", selection: $rule.combination, choices: [TerminalChoice("所有条件都满足", .all), TerminalChoice("任一条件满足", .any)])
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     ForEach($rule.conditions) { $condition in
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
-                                Picker("条件", selection: $condition.kind) { ForEach(TriggerKind.allCases) { kind in Text(kind.title).tag(kind) } }
-                                Button("移除") { rule.conditions.removeAll { $0.id == condition.id } }.disabled(rule.conditions.count == 1)
+                                TerminalPicker("条件", selection: $condition.kind, choices: TriggerKind.allCases.map { TerminalChoice($0.title, $0) })
+                                Button("移除") { rule.conditions.removeAll { $0.id == condition.id } }.workKeyboardFocus(radius: 0).disabled(rule.conditions.count == 1)
                             }
                             if condition.kind == .weeklySchedule { scheduleInput($condition) }
                             if condition.kind == .externalDisplay {
@@ -114,24 +108,16 @@ private struct TriggerRuleEditor: View {
                             if let validation = condition.validationError { Text(validation).font(.system(size: 11)).foregroundStyle(.red) }
                         }.onChange(of: condition.kind) { _, kind in
                             if kind == .weeklySchedule && condition.schedule == nil { condition.schedule = TriggerWeeklySchedule() }
-                        }.padding(12).background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 10))
+                        }.padding(12).background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 0))
                     }
                 }
             }.frame(minHeight: 160, maxHeight: 320)
-            Button("添加条件") { rule.conditions.append(TriggerCondition()) }.buttonStyle(WorkButtonStyle())
+            Button("添加条件") { rule.conditions.append(TriggerCondition()) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             VStack(alignment: .leading, spacing: 10) {
                 Text("规则生效时的显示行为").font(WorkType.controlLabel)
                 HStack {
-                    Picker("显示器", selection: $rule.preventDisplaySleep) {
-                        Text("使用全局设置").tag(Optional<Bool>.none)
-                        Text("保持亮屏").tag(Optional(true))
-                        Text("允许闲时息屏").tag(Optional(false))
-                    }
-                    Picker("屏幕保护", selection: $rule.preventScreenSaver) {
-                        Text("使用全局设置").tag(Optional<Bool>.none)
-                        Text("暂停屏保").tag(Optional(true))
-                        Text("允许屏保").tag(Optional(false))
-                    }
+                    TerminalPicker("显示器", selection: $rule.preventDisplaySleep, choices: [TerminalChoice("使用全局设置", nil), TerminalChoice("保持亮屏", true), TerminalChoice("允许闲时息屏", false)])
+                    TerminalPicker("屏幕保护", selection: $rule.preventScreenSaver, choices: [TerminalChoice("使用全局设置", nil), TerminalChoice("暂停屏保", true), TerminalChoice("允许屏保", false)])
                 }
                 WorkNote(text: "覆盖仅在本规则控制工作模式时生效；系统锁定后亮屏与屏保保活会暂停，密码要求由所选锁屏策略决定。")
             }
@@ -139,15 +125,15 @@ private struct TriggerRuleEditor: View {
             if let error { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.buttonStyle(WorkButtonStyle())
+                Button("取消") { dismiss() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                 Button("保存") {
                     error = controller.save(rule)
                     if error == nil { dismiss() }
-                }.buttonStyle(WorkButtonStyle(prominent: true))
+                }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0)
             }
-        }.padding(26).frame(width: 650).foregroundStyle(WorkStyle.ink)
+        }.padding(26).frame(width: 650).background(WorkStyle.canvas).preferredColorScheme(.light).foregroundStyle(WorkStyle.ink)
             .font(.system(size: 12)).tint(WorkStyle.blue)
-            .buttonStyle(WorkButtonStyle()).textFieldStyle(.roundedBorder)
+            .buttonStyle(WorkButtonStyle()).focusEffectDisabled().textFieldStyle(TerminalTextFieldStyle())
             .task(id: rule.conditions.map(\.kind)) { await refreshPreview() }
     }
     @ViewBuilder private func conditionInput(_ condition: Binding<TriggerCondition>) -> some View {
@@ -156,7 +142,7 @@ private struct TriggerRuleEditor: View {
         VStack(alignment: .leading, spacing: 8) {
             if kind == .appRunning || kind == .appFrontmost {
                 HStack {
-                    Button("选择应用…") { chooseApplication(condition) }
+                    Button("选择应用…") { chooseApplication(condition) }.workKeyboardFocus(radius: 0)
                     if !suggestions.isEmpty { suggestionMenu(suggestions, condition: condition, title: "选择运行中的应用") }
                 }
                 if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: condition.wrappedValue.value) {
@@ -169,12 +155,12 @@ private struct TriggerRuleEditor: View {
                 if !suggestions.isEmpty {
                     HStack {
                         suggestionMenu(suggestions, condition: condition, title: kind == .mountedVolume ? "选择已挂载磁盘" : kind == .processRunning ? "选择运行中的进程" : "选择当前观测")
-                        Button("刷新") { Task { await refreshPreview() } }
+                        Button("刷新") { Task { await refreshPreview() } }.workKeyboardFocus(radius: 0)
                     }
                 } else if [.usbDevice, .bluetoothDevice, .audioOutput, .mountedVolume, .processRunning].contains(kind) {
                     HStack {
                         Text(preview.unavailable[kind] ?? "没有可选设备，连接后可刷新。").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
-                        Button("刷新") { Task { await refreshPreview() } }
+                        Button("刷新") { Task { await refreshPreview() } }.workKeyboardFocus(radius: 0)
                     }
                 }
                 TextField(kind.hint, text: condition.value)
@@ -192,7 +178,7 @@ private struct TriggerRuleEditor: View {
                         else { schedule.wrappedValue.weekdays.insert(day) }
                     } label: {
                         Text([1: "周日", 2: "周一", 3: "周二", 4: "周三", 5: "周四", 6: "周五", 7: "周六"][day]!)
-                    }.buttonStyle(WorkButtonStyle(prominent: selected))
+                    }.buttonStyle(WorkButtonStyle(prominent: selected)).workKeyboardFocus(radius: 0)
                         .accessibilityValue(selected ? "已选择" : "未选择")
                 }
             }
@@ -217,14 +203,12 @@ private struct TriggerRuleEditor: View {
             TextField("小时", value: hour, format: .number.precision(.integerLength(2))).frame(width: 46).accessibilityLabel(label + "小时，0 至 23")
             Text(":").foregroundStyle(WorkStyle.muted)
             TextField("分钟", value: fraction, format: .number.precision(.integerLength(2))).frame(width: 46).accessibilityLabel(label + "分钟，0 至 59")
-        }.textFieldStyle(.roundedBorder).font(WorkType.body).monospacedDigit()
+        }.textFieldStyle(TerminalTextFieldStyle()).font(WorkType.body).monospacedDigit()
     }
     private func suggestionMenu(_ suggestions: [TriggerSuggestion], condition: Binding<TriggerCondition>, title: String) -> some View {
-        Menu(title) {
-            ForEach(suggestions) { suggestion in
-                Button(suggestion.title) { condition.wrappedValue.value = suggestion.value }
-            }
-        }
+        TerminalActionMenu(title: title, titles: suggestions.map(\.title)) { index in
+            if suggestions.indices.contains(index) { condition.wrappedValue.value = suggestions[index].value }
+        }.frame(width: 250)
     }
     private func refreshPreview() async {
         let kinds = Set(rule.conditions.map(\.kind))

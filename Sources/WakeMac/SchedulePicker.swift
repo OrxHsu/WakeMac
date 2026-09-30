@@ -29,14 +29,14 @@ struct SchedulePicker: View {
     var body: some View {
         Button { showing = true } label: {
             HStack(spacing: 9) {
-                Image(systemName: "calendar")
+                TerminalIcon(name: "calendar")
                 Text(selection.formatted(.dateTime.month(.twoDigits).day(.twoDigits).locale(Locale(identifier: "zh_CN"))))
                 Rectangle().fill(WorkStyle.line).frame(width: 1, height: 14)
                 Text(selection.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(Locale(identifier: "en_GB"))))
                     .monospacedDigit()
-                Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
+                TerminalIcon(name: "chevron.down").font(.system(size: 9, weight: .semibold))
             }.font(.system(size: 12, weight: .medium))
-        }.buttonStyle(WorkButtonStyle()).accessibilityLabel("选择恢复日期和时间")
+        }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0).accessibilityLabel("选择恢复日期和时间")
             .popover(isPresented: $showing, arrowEdge: .bottom) {
                 SchedulePickerPanel(initial: selection) { value in
                     if let value { selection = value }
@@ -73,7 +73,7 @@ private struct SchedulePickerPanel: View {
                     Text("选择恢复时间").font(WorkType.sectionTitle).accessibilityAddTraits(.isHeader)
                     Spacer()
                     Button("今天") { day = context.date; month = calendar.dateInterval(of: .month, for: day)!.start }
-                        .buttonStyle(.plain).foregroundStyle(WorkStyle.blue).font(.system(size: 11, weight: .medium))
+                        .buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).foregroundStyle(WorkStyle.blue).font(.system(size: 11, weight: .medium))
                 }
                 HStack {
                     Text(month.formatted(.dateTime.year().month(.wide).locale(Locale(identifier: "zh_CN"))))
@@ -115,26 +115,27 @@ private struct SchedulePickerPanel: View {
                     Text("请选择一个未来的有效时间").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                 }
                 HStack {
-                    Button("取消") { finish(nil) }.buttonStyle(WorkButtonStyle())
+                    Button("取消") { finish(nil) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                     Spacer()
                     Button("完成") {
                         guard let value = result, value > Date() else { error = "这个时间已经过去，请重新选择。"; return }
                         finish(value)
-                    }.buttonStyle(WorkButtonStyle(prominent: true)).disabled(result == nil || result! <= context.date)
+                    }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0).disabled(result == nil || result! <= context.date)
                 }
-            }.padding(20).frame(width: 332)
+            }.padding(20).frame(width: 332).background(WorkStyle.surface).preferredColorScheme(.light)
                 .foregroundStyle(WorkStyle.ink).tint(WorkStyle.blue)
                 .onChange(of: day) { _, _ in error = "" }
                 .onChange(of: hour) { _, _ in error = "" }
                 .onChange(of: minute) { _, _ in error = "" }
+                .onExitCommand { finish(nil) }
         }
     }
 
     private func monthButton(_ offset: Int, now: Date) -> some View {
         Button { month = calendar.date(byAdding: .month, value: offset, to: month)! } label: {
-            Image(systemName: offset < 0 ? "chevron.left" : "chevron.right")
+            TerminalIcon(name: offset < 0 ? "chevron.left" : "chevron.right")
                 .font(.system(size: 11, weight: .semibold)).frame(width: 26, height: 26)
-        }.buttonStyle(.plain).workKeyboardFocus(radius: 8)
+        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
             .accessibilityLabel(offset < 0 ? "上个月" : "下个月")
             .disabled(offset < 0 && month <= calendar.dateInterval(of: .month, for: now)!.start)
     }
@@ -147,28 +148,16 @@ private struct SchedulePickerPanel: View {
                 .font(.system(size: 12, weight: selected ? .semibold : .regular, design: .rounded))
                 .frame(maxWidth: .infinity).frame(height: 32)
                 .foregroundStyle(selected ? Color.white : past ? WorkStyle.muted.opacity(0.35) : WorkStyle.ink)
-                .background(selected ? WorkStyle.blue : .clear, in: RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(calendar.isDateInToday(value) && !selected ? WorkStyle.blue.opacity(0.5) : .clear))
-                .contentShape(RoundedRectangle(cornerRadius: 10))
-        }.buttonStyle(.plain).disabled(past).workKeyboardFocus(radius: 10)
+                .background(selected ? WorkStyle.blue : .clear, in: RoundedRectangle(cornerRadius: 0))
+                .overlay(RoundedRectangle(cornerRadius: 0).strokeBorder(calendar.isDateInToday(value) && !selected ? TerminalStyle.amber.opacity(0.8) : .clear))
+                .contentShape(RoundedRectangle(cornerRadius: 0))
+        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(past)
             .accessibilityLabel(value.formatted(.dateTime.year().month().day().locale(Locale(identifier: "zh_CN"))))
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 
     private func timeMenu(value: Binding<Int>, range: Range<Int>, unit: String) -> some View {
-        Menu {
-            ForEach(range, id: \.self) { number in
-                Button { value.wrappedValue = number } label: {
-                    if value.wrappedValue == number { Label(String(format: "%02d", number), systemImage: "checkmark") }
-                    else { Text(String(format: "%02d", number)) }
-                }
-            }
-        } label: {
-            Text(String(format: "%02d", value.wrappedValue))
-                .font(.system(size: 20, weight: .medium, design: .rounded)).monospacedDigit()
-                .frame(width: 32).padding(.vertical, 3)
-        }.menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-            .padding(.horizontal, 7).padding(.vertical, 5).workGlassControl()
-            .accessibilityLabel("选择" + unit).accessibilityValue(String(value.wrappedValue))
+        TerminalPicker("选择" + unit, selection: value, choices: range.map { TerminalChoice(String(format: "%02d", $0), $0) })
+            .frame(width: 66).accessibilityValue(String(value.wrappedValue))
     }
 }

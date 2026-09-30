@@ -9,7 +9,7 @@ struct QuickSessionControls: View {
             HStack {
                 Text("会话").font(WorkType.controlLabel)
                 Spacer()
-                Button(model.verifiedWork ? "结束" : "开始默认会话") { Task { await model.performShortcut(4) } }
+                Button(model.verifiedWork ? "结束" : "开始默认会话") { Task { await model.performShortcut(4) } }.workKeyboardFocus(radius: 0)
                     .disabled(model.busy || sessions.isStarting)
             }
             WorkToggle(title: "阻止显示器休眠", compact: compact, isOn: Binding(get: { sessions.effectivePreventDisplaySleep }, set: { value in Task { await model.changeDisplayPrevention(value) } }))
@@ -18,9 +18,9 @@ struct QuickSessionControls: View {
                 HStack {
                     Text("延长会话").font(compact ? WorkType.compactLabel : WorkType.controlLabel)
                     Spacer()
-                    Button("+15 分钟") { _ = sessions.extend(minutes: 15); model.onUpdate?() }.disabled(!model.verifiedWork)
+                    Button("+15 分钟") { _ = sessions.extend(minutes: 15); model.onUpdate?() }.workKeyboardFocus(radius: 0).disabled(!model.verifiedWork)
                 }
             }
-        }.font(WorkType.body).buttonStyle(WorkButtonStyle()).disabled(model.busy)
+        }.font(WorkType.body).buttonStyle(WorkButtonStyle()).focusEffectDisabled().disabled(model.busy)
     }
 }

@@ -2,7 +2,7 @@
 
 <img src="Assets/AppIcon.png" width="128" alt="WakeMac icon">
 
-原生 macOS 菜单栏应用，管理保活、合盖运行与自动收尾。无需安装 Amphetamine 或 Power Protect。采用 SwiftUI / AppKit 构建，macOS 26+ 使用原生 Liquid Glass。界面目前为简体中文。
+原生 macOS 菜单栏应用，管理保活、合盖运行与自动收尾。无需安装 Amphetamine 或 Power Protect。采用 SwiftUI / AppKit 构建，浅色界面使用系统字体、克莱因蓝主题与白、黑、橙黄辅助色。方形状态开关、平直按钮与菜单共享组件，动效尊重系统“减少动态效果”。界面目前为简体中文。
 
 ## 使用
 
@@ -86,6 +86,8 @@ end tell
 ```
 
 `mode` 支持 `desktop` 和 `background`；省略 `for minutes` 为无限期。脚本与界面均采用偏好设置中的锁屏策略，不修改系统认证设置。功能清单参考 [Amphetamine 官方介绍](https://apps.apple.com/us/app/amphetamine/id937984704)；[Power Protect](https://github.com/x74353/Amphetamine-Power-Protect) 主要修复 Apple Silicon 合盖期间电源切换问题，WakeMac 使用已有签名服务和租约实现相应电源控制。
+
+0.4.0（构建 23）界面更新：八个页面、菜单栏面板与规则编辑器统一控件；标题和正文使用系统字体，工具数据使用 IBM Plex Mono，许可随包分发。156 项自动测试通过，签名 Release 构建与本机安装通过；本机已逐页检查八个页面，验证侧栏点击／Tab 焦点、保持唤醒开关启停、禁用按钮外观、时间数字显示与 Esc 关闭；测试后恢复正常休眠。规则编辑／选择菜单亦已检查。滑块键盘操作、VoiceOver 与动效帧率未实测。
 
 0.4.0（构建 17）本机验证：150 项自动测试通过，签名 Release 构建通过。本机 Safari 27.2 的 32 MiB 真实下载已验证：支持 .download 包或包内同名文件，观察增长、完成重命名并稳定 30 秒后自动结束会话，恢复核验的正常休眠；取消下载不会把未变化的旧目标视为完成。该版本 Safari 发布的 Progress 缺少文件 URL 和下载操作类型，因此不显示无法核验的百分比。构建 16 已实测合盖期间拔电和接电，约 207 秒采样连续；系统重置的开关约 4 秒恢复，后台租约保留，结束后恢复正常休眠；实际 AppleScript 已执行会话启停／查询／延长、显示器与屏保、合盖服务、规则总开关和磁盘保活控制，验证合盖切换保留原定时期限。之前 0.3.x 的八个页面与日期面板已逐页检查。本机 macOS 27.2 的只读原生观测和本地磁盘实际异步写入／同步／清理已验证；Wi-Fi、蓝牙和 Cisco 状态不可读取时保留“未知”。[macOS 兼容性检查](https://github.com/OrxHsu/WakeMac/actions/runs/36711945719)在 ARM64 macOS 15.7.9 与 26.6.2 各执行 150 项测试，148 项通过、2 项因云端现有电源状态不适合而跳过，Release 包与 ad hoc 签名均通过；工作流仅手动执行。macOS 14 与 Intel 已不在支持范围。外接设备、可移动磁盘和 Cisco 客户端不作为发布前验证门槛；遇到问题请提交 [GitHub Issues](https://github.com/OrxHsu/WakeMac/issues)，根据具体报告修复。未实测的设备行为不由云端构建与测试推定。
 

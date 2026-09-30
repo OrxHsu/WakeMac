@@ -8,3 +8,4 @@ dist/
 .env.*
 # Local development history and machine-specific verification records.
 docs/
+design-qa.md

@@ -28,6 +28,7 @@ struct PreferencesView: View {
     @ObservedObject var notifier: LocalNotifier
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page = PreferencePage.power
+    @Namespace private var navigationSelection
     @State private var date = Date().addingTimeInterval(3600)
     @State private var command = ""
     @State private var directory = FileManager.default.homeDirectoryForCurrentUser.path
@@ -37,16 +38,26 @@ struct PreferencesView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.padding(.leading, 12).padding(.vertical, 12)
+            sidebar
             VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text(page.rawValue).font(WorkType.pageTitle).accessibilityAddTraits(.isHeader)
-                    Text(page.subtitle).font(WorkType.body).foregroundStyle(WorkStyle.muted)
-                }.padding(.horizontal, 30).padding(.top, 32).padding(.bottom, 24)
+                HStack(alignment: .center, spacing: 16) {
+                    Text(page.rawValue).font(.system(size: 30, weight: .heavy)).accessibilityAddTraits(.isHeader)
+                    Text(page == .power ? "01 / POWER CONTROL" : page.subtitle)
+                        .font(page == .power ? TerminalStyle.mono(11) : WorkType.body)
+                        .foregroundStyle(TerminalStyle.muted).lineLimit(2)
+                    Spacer(minLength: 0)
+                    if let battery = model.battery {
+                        TerminalLabel("\(battery.percent)%", systemImage: battery.onBattery ? "battery.75percent" : "battery.100percent.bolt")
+                            .font(TerminalStyle.mono(12)).fixedSize()
+                    }
+                }.padding(.vertical, 20)
+                    .overlay(alignment: .bottom) { Rectangle().fill(TerminalStyle.line).frame(height: 1) }
+                    .padding(.horizontal, 20).padding(.bottom, 14)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch page {
-                        case .power: powerTab
+                        case .power:
+                            PowerHomeView(model: model, sessions: model.sessions) { page = .sessions }
                         case .sessions:
                             SessionsView(controller: model.sessions)
                             IdlePolicyView(controller: model.idlePolicy, immediateAuthentication: model.snapshot?.lockPolicy == .immediate)
@@ -57,105 +68,64 @@ struct PreferencesView: View {
                         case .advanced: AdvancedView(appearance: model.appearance, notifier: notifier)
                         case .history: historyTab
                         }
-                    }.padding(.horizontal, 28).padding(.bottom, 28)
-                }
-                .id(page)
-                .frame(maxWidth: .infinity)
+                    }.padding(.horizontal, 20).padding(.bottom, 20).terminalReveal()
+                }.id(page).frame(maxWidth: .infinity)
+                    .transition(.opacity)
+                    .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: page)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
         }
-        .frame(minWidth: 780, minHeight: 630)
-        .background(WorkStyle.canvas)
-        .font(WorkType.body).foregroundStyle(WorkStyle.ink).tint(WorkStyle.blue)
-        .buttonStyle(WorkButtonStyle())
+        .frame(minWidth: 860, minHeight: 630)
+        .background(TerminalStyle.paper)
+        .font(WorkType.body).foregroundStyle(TerminalStyle.ink).tint(TerminalStyle.accent)
+        .buttonStyle(TerminalButtonStyle()).focusEffectDisabled().preferredColorScheme(.light)
         .onAppear { shortcutDraft = hotkeys.bindings; shortcutEnabled = hotkeys.enabled }
     }
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 9) {
-                Image(nsImage: MenuMark.image()).renderingMode(.template).foregroundStyle(WorkStyle.blue)
-                Text("WakeMac").font(.system(size: 14, weight: .semibold))
-            }.padding(.horizontal, 20).padding(.top, 30).padding(.bottom, 30)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WakeMac").font(TerminalStyle.display(29)).fixedSize()
+                Text("POWER TERMINAL").font(TerminalStyle.mono(10)).tracking(2.1)
+                    .foregroundStyle(TerminalStyle.muted)
+            }.padding(.horizontal, 22).padding(.top, 28).padding(.bottom, 32)
             VStack(spacing: 5) {
                 ForEach(PreferencePage.allCases, id: \.self) { item in
-                    Button { withAnimation(reduceMotion ? nil : .snappy(duration: 0.22)) { page = item } } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: item.icon).font(.system(size: 14)).frame(width: 20)
-                            Text(item.rawValue).font(.system(size: 12, weight: page == item ? .semibold : .medium))
+                    Button {
+                        withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) { page = item }
+                    } label: {
+                        HStack(spacing: 12) {
+                            TerminalIcon(name: item.icon, size: 20).font(.system(size: 19)).frame(width: 24)
+                            Text(item.rawValue).font(.system(size: 15, weight: page == item ? .semibold : .regular))
                             Spacer(minLength: 0)
-                        }.padding(.horizontal, 12).padding(.vertical, 12)
-                            .foregroundStyle(page == item ? WorkStyle.blue : WorkStyle.muted)
-                            .background(page == item ? WorkStyle.blue.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(RoundedRectangle(cornerRadius: 8))
-                    }.buttonStyle(.plain).focusEffectDisabled()
+                        }.padding(.horizontal, 17).frame(height: 46)
+                            .foregroundStyle(page == item ? TerminalStyle.accent : TerminalStyle.ink)
+                             .background {
+                                if page == item {
+                                    TerminalStyle.selection.matchedGeometryEffect(id: "navigation", in: navigationSelection)
+                                }
+                            }
+                            .overlay(alignment: .leading) {
+                                if page == item {
+                                    Rectangle().fill(TerminalStyle.accent).frame(width: 3)
+                                        .matchedGeometryEffect(id: "navigation-rule", in: navigationSelection)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                    }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
                         .accessibilityAddTraits(page == item ? [.isSelected] : [])
                 }
-            }.padding(.horizontal, 10)
-            Spacer()
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 6) {
-                    Circle().fill(model.error ? Color.orange : WorkStyle.blue).frame(width: 5, height: 5)
-                    Text(model.headline).font(.system(size: 11, weight: .medium))
-                }
-                Label(model.lockSummary, systemImage: model.requiresImmediateLock ? "lock.shield" : "gearshape").font(.system(size: 10))
-                    .foregroundStyle(WorkStyle.muted)
-            }.padding(20)
-        }.frame(width: 174).frame(maxHeight: .infinity).background(WorkGlassBackground(radius: 22))
-    }
-
-    private var powerTab: some View {
-        Group {
-            WorkCard(title: "运行控制", subtitle: model.headline) {
-                PowerControls(model: model)
-                HStack {
-                    Button("工作会话") { page = .sessions }
-                    Button("自动触发") { page = .triggers }
-                    Spacer()
-                }
-                if model.sessions.isActive { WorkNote(text: model.sessions.status, icon: "hourglass") }
-                if model.triggerOwnedMode != nil { WorkNote(text: model.triggerSummary, icon: "bolt.badge.clock") }
-            }
-            WorkCard(title: "快捷模式") {
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(WorkMode.allCases, id: \.self) { mode in
-                        Button {
-                            model.quitWhenReady = false
-                            Task { await model.choose(mode) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                HStack {
-                                    Image(systemName: mode.icon).font(.system(size: 19))
-                                    Spacer()
-                                    if model.active == mode { Image(systemName: "checkmark.circle.fill") }
-                                }.foregroundStyle(model.active == mode ? WorkStyle.blue : WorkStyle.muted)
-                                Text(mode.title).font(.system(size: 12, weight: .semibold))
-                                Text(mode == .background ? "保持唤醒\n合盖继续" : mode == .desk ? "保持唤醒\n允许合盖休眠" : "恢复闲置\n与合盖休眠")
-                                    .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
-                            }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                                .background(model.active == mode ? WorkStyle.selection : WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 12))
-                        }.buttonStyle(.plain).focusEffectDisabled()
-                            .disabled(model.busy || (mode == .background && model.helperStatus != .enabled))
-                            .accessibilityAddTraits(model.active == mode ? [.isSelected] : [])
-                    }
-                }
-            }
-            WorkCard(title: "会话快捷操作", subtitle: "工作中调整仅影响本次会话；正常模式下调整保存为默认设置。") {
-                QuickSessionControls(model: model, sessions: model.sessions)
-            }
-            HStack {
-                WorkNote(text: model.display.lidClosed.map { $0 ? "上盖已合上" : "上盖已打开" } ?? "上盖状态未知", icon: "laptopcomputer")
-                Spacer()
-                Button("立即休眠") { Task { await model.choose(.normal, sleep: true) } }.disabled(model.busy)
-            }
-            if model.pending != nil || model.error {
-                WorkNote(text: model.message, icon: "exclamationmark.circle")
-                HStack {
-                    if model.pending != nil { Button("恢复锁屏保护", action: model.openLockSettings) }
-                    Button("重新检查") { model.error = false; Task { await model.refresh() } }
-                }
-            }
-        }
+            }.padding(.horizontal, 14)
+            Spacer(minLength: 18)
+            VStack(alignment: .leading, spacing: 14) {
+                Rectangle().fill(TerminalStyle.line.opacity(0.7)).frame(height: 1)
+                TerminalLabel(model.lockSummary, systemImage: model.requiresImmediateLock ? "checkmark.shield" : "gearshape")
+                    .font(.system(size: 11)).foregroundStyle(TerminalStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }.padding(.horizontal, 20).padding(.bottom, 24)
+        }.frame(width: 206).frame(maxHeight: .infinity)
+            .background(LinearGradient(colors: [.white, TerminalStyle.silver.opacity(0.25)], startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(alignment: .trailing) { Rectangle().fill(TerminalStyle.line).frame(width: 1) }
+            .overlay(TerminalBrackets().stroke(TerminalStyle.muted, lineWidth: 0.7).padding(12).allowsHitTesting(false))
     }
 
     private var timerTab: some View {
@@ -169,21 +139,21 @@ struct PreferencesView: View {
                                 Text(minutes < 60 ? "分钟后" : "小时后").font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                             }.frame(maxWidth: .infinity).padding(.vertical, 12)
                                 .workGlassControl()
-                        }.buttonStyle(.plain).disabled(!canSchedule).opacity(canSchedule ? 1 : 0.45)
+                        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(!canSchedule).opacity(canSchedule ? 1 : 0.45)
                             .accessibilityLabel(minutes < 60 ? "30 分钟" : "\(minutes / 60) 小时")
                     }
                 } }
                 HStack(spacing: 10) {
                     SchedulePicker(selection: $date)
                     Spacer(minLength: 0)
-                    Button("设置定时") { model.scheduleRestore(at: date) }.disabled(!canSchedule)
+                    Button("设置定时") { model.scheduleRestore(at: date) }.workKeyboardFocus(radius: 0).disabled(!canSchedule)
                 }
                 if let end = model.automation.deadline {
                     HStack {
-                        Label(end.formatted(date: .omitted, time: .shortened) + " 恢复正常模式", systemImage: "timer")
+                        TerminalLabel(end.formatted(date: .omitted, time: .shortened) + " 恢复正常模式", systemImage: "timer")
                             .foregroundStyle(WorkStyle.blue)
                         Spacer()
-                        Button("取消", action: model.cancelTimer).buttonStyle(.plain)
+                        Button("取消", action: model.cancelTimer).buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
                     }
                 } else if !canSchedule {
                     WorkNote(text: "先在工作模式页或菜单栏开启保持唤醒，再设置定时。")
@@ -194,7 +164,7 @@ struct PreferencesView: View {
                 HStack {
                     Text("休眠电量").foregroundStyle(WorkStyle.muted)
                     Spacer()
-                    Stepper(value: Binding(get: { model.automation.batteryThreshold }, set: { model.setBatteryProtection(enabled: model.automation.batteryEnabled, threshold: $0) }), in: 5...50, step: 5) {
+                    TerminalStepper(value: Binding(get: { model.automation.batteryThreshold }, set: { model.setBatteryProtection(enabled: model.automation.batteryEnabled, threshold: $0) }), in: 5...50, step: 5) {
                         Text("\(model.automation.batteryThreshold)%").font(.system(size: 20, weight: .medium, design: .rounded)).monospacedDigit()
                     }.fixedSize().accessibilityLabel("休眠电量")
                 }
@@ -205,7 +175,7 @@ struct PreferencesView: View {
                 }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                 if let battery = model.battery {
                     HStack {
-                        Image(systemName: battery.onBattery ? "battery.75percent" : "bolt.fill")
+                        TerminalIcon(name: battery.onBattery ? "battery.75percent" : "bolt.fill")
                         Text("当前 \(battery.percent)%")
                         Spacer()
                         Text(battery.onBattery ? "电池供电" : "已连接电源")
@@ -213,10 +183,10 @@ struct PreferencesView: View {
                 }
             }
             if let text = model.countdownText {
-                Label(text, systemImage: "timer").foregroundStyle(WorkStyle.blue)
+                TerminalLabel(text, systemImage: "timer").foregroundStyle(WorkStyle.blue)
             }
             if model.automation.batterySleepAt != nil || model.automation.jobSleepAt != nil {
-                Button("取消自动休眠", action: model.cancelAutomaticSleep)
+                Button("取消自动休眠", action: model.cancelAutomaticSleep).workKeyboardFocus(radius: 0)
             }
             feedback
         }
@@ -234,7 +204,7 @@ struct PreferencesView: View {
                         Button("选择…") {
                             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
                             if panel.runModal() == .OK, let url = panel.url { directory = url.path }
-                        }.disabled(model.jobRunning)
+                        }.workKeyboardFocus(radius: 0).disabled(model.jobRunning)
                     }
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -245,24 +215,24 @@ struct PreferencesView: View {
                     }.foregroundStyle(WorkStyle.muted)
                     TextEditor(text: $command).font(.system(size: 12, design: .monospaced))
                         .scrollContentBackground(.hidden).padding(10).frame(height: 120)
-                        .background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 8))
-                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(WorkStyle.line))
+                        .background(WorkStyle.canvas, in: RoundedRectangle(cornerRadius: 0))
+                        .overlay(RoundedRectangle(cornerRadius: 0).strokeBorder(WorkStyle.line))
                         .disabled(model.jobRunning).accessibilityLabel("要运行的 zsh 命令")
                 }
                 HStack {
-                    Label(model.jobStatus, systemImage: model.jobRunning ? "circle.dotted" : "terminal")
+                    TerminalLabel(model.jobStatus, systemImage: model.jobRunning ? "circle.dotted" : "terminal")
                         .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     Spacer()
                     Button { Task { await model.startJob(command: command, directory: directory) } } label: {
-                        Label("运行，成功后休眠", systemImage: "play.fill")
-                    }.buttonStyle(WorkButtonStyle(prominent: true))
+                        TerminalLabel("运行，成功后休眠", systemImage: "play.fill")
+                    }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0)
                         .disabled(model.jobRunning || model.busy || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 if model.jobRunning || model.automation.jobSleepAt != nil {
-                    Button("取消完成后休眠，命令继续", action: model.cancelAutomaticSleep)
+                    Button("取消完成后休眠，命令继续", action: model.cancelAutomaticSleep).workKeyboardFocus(radius: 0)
                 }
                 if let url = model.jobLogURL {
-                    Button("在 Finder 查看日志") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Button("在 Finder 查看日志") { NSWorkspace.shared.activateFileViewerSelecting([url]) }.workKeyboardFocus(radius: 0)
                 }
             }
             WorkNote(text: "只跟踪这里启动的命令，不会判断其他 Codex 任务是否完成。")
@@ -280,10 +250,10 @@ struct PreferencesView: View {
                 Text("合盖继续运行需要启用 WakeMac 自带的系统服务，并在系统设置中批准一次。")
                     .font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                 HStack {
-                    Button(model.helperStatus == .requiresApproval ? "完成授权…" : "启用合盖服务…", action: model.enableHelper)
+                    Button(model.helperStatus == .requiresApproval ? "完成授权…" : "启用合盖服务…", action: model.enableHelper).workKeyboardFocus(radius: 0)
                         .disabled(model.busy || model.helperStatus == .enabled)
-                    Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }
-                    Button("移除服务") { Task { await model.removeHelper() } }.disabled(model.busy)
+                    Button("打开系统设置") { SMAppService.openSystemSettingsLoginItems() }.workKeyboardFocus(radius: 0)
+                    Button("移除服务") { Task { await model.removeHelper() } }.workKeyboardFocus(radius: 0).disabled(model.busy)
                 }
                 WorkNote(text: model.helperStatus == .enabled ? "合盖服务已授权，可以选择后台工作。" : model.helperMessage.isEmpty ? "合盖服务尚未授权。" : model.helperMessage)
                 WorkNote(text: "切换回正常模式或退出应用会恢复休眠；异常断线和心跳超时由服务自动恢复。")
@@ -294,7 +264,7 @@ struct PreferencesView: View {
                 HStack {
                     Text(model.lockSummary).font(WorkType.body).foregroundStyle(WorkStyle.muted)
                     Spacer()
-                    Button("打开锁屏设置", action: model.openLockSettings)
+                    Button("打开锁屏设置", action: model.openLockSettings).workKeyboardFocus(radius: 0)
                 }
                 WorkNote(text: "WakeMac 不修改系统密码要求，也不解锁已锁定的 Mac。系统设为不要求密码时，熄屏后返回桌面也不再要求密码。")
             }
@@ -312,10 +282,10 @@ struct PreferencesView: View {
                     Button(notifier.enabled ? "通知设置…" : "开启通知…") {
                         if notifier.enabled { notifier.showSettings() }
                         else { Task { _ = await notifier.request() } }
-                    }
+                    }.workKeyboardFocus(radius: 0)
                 }
                 if !notifier.message.isEmpty { WorkNote(text: notifier.message) }
-            }.toggleStyle(.switch).controlSize(.small)
+            }.toggleStyle(TerminalSwitchStyle()).controlSize(.small)
             WorkCard(title: "会话通知", subtitle: "任务结果、低电量与错误提醒继续保留。") {
                 WorkToggle(title: "工作会话开始", isOn: $notifier.sessionStart)
                 WorkToggle(title: "工作会话结束", isOn: $notifier.sessionEnd)
@@ -329,28 +299,24 @@ struct PreferencesView: View {
                         Text(shortcutDraft[index].title).font(WorkType.controlLabel)
                         Spacer()
                         Toggle("启用" + shortcutDraft[index].title, isOn: $shortcutDraft[index].enabled)
-                            .labelsHidden().toggleStyle(.switch).controlSize(.small)
-                        Picker("修饰键", selection: $shortcutDraft[index].modifiers) {
-                            ForEach(GlobalHotKeys.modifiers, id: \.1) { Text($0.0).tag($0.1) }
-                        }.labelsHidden().frame(width: 108)
-                        Picker("按键", selection: $shortcutDraft[index].key) {
-                            ForEach(GlobalHotKeys.keys, id: \.1) { Text($0.0).tag($0.1) }
-                        }.labelsHidden().frame(width: 66)
+                            .labelsHidden().toggleStyle(TerminalSwitchStyle()).controlSize(.small)
+                        TerminalPicker("修饰键", selection: $shortcutDraft[index].modifiers, choices: GlobalHotKeys.modifiers.map { TerminalChoice($0.0, $0.1) }).labelsHidden().frame(width: 108)
+                        TerminalPicker("按键", selection: $shortcutDraft[index].key, choices: GlobalHotKeys.keys.map { TerminalChoice($0.0, $0.1) }).labelsHidden().frame(width: 66)
                     }
                 }
                 HStack {
                     Text(hotkeys.message.isEmpty ? "模式默认使用 ⌃⌥ + 1 / 2 / 3；其他操作按需开启。" : hotkeys.message)
                         .font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                     Spacer()
-                    Button("保存快捷键") { hotkeys.apply(shortcutDraft, enabled: shortcutEnabled) }
+                    Button("保存快捷键") { hotkeys.apply(shortcutDraft, enabled: shortcutEnabled) }.workKeyboardFocus(radius: 0)
                 }
             }
             BehaviorSettingsView(behavior: model.behavior)
             HStack {
                 WorkNote(text: "退出前会恢复正常休眠。", icon: "power")
                 Spacer()
-                Button("提交问题") { if let url = URL(string: "https://github.com/OrxHsu/WakeMac/issues/new") { NSWorkspace.shared.open(url) } }
-                Button("退出 WakeMac") { Task { await model.requestQuit() } }.disabled(model.busy)
+                Button("提交问题") { if let url = URL(string: "https://github.com/OrxHsu/WakeMac/issues/new") { NSWorkspace.shared.open(url) } }.workKeyboardFocus(radius: 0)
+                Button("退出 WakeMac") { Task { await model.requestQuit() } }.workKeyboardFocus(radius: 0).disabled(model.busy)
             }
             if model.jobRunning { WorkNote(text: "命令仍在运行，退出时会等待任务结束。") }
         }
@@ -359,13 +325,13 @@ struct PreferencesView: View {
     private var historyTab: some View {
         Group {
             HStack {
-                Label("仅保存在这台 Mac", systemImage: "internaldrive")
+                TerminalLabel("仅保存在这台 Mac", systemImage: "internaldrive")
                 Spacer()
                 Text("最近 \(model.history.count) 条 / 最多 200 条").monospacedDigit()
             }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
             if model.history.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "clock").font(.system(size: 28)).foregroundStyle(WorkStyle.blue)
+                    TerminalIcon(name: "clock").font(.system(size: 28)).foregroundStyle(WorkStyle.blue)
                     Text("还没有运行记录").font(.system(size: 14, weight: .medium))
                     Text("切换模式后，记录会出现在这里。").foregroundStyle(WorkStyle.muted)
                 }.frame(maxWidth: .infinity).padding(.vertical, 60)

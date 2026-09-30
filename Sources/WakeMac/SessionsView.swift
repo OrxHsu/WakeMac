@@ -27,18 +27,13 @@ struct SessionsView: View {
                 HStack {
                     Text("结束条件").font(WorkType.controlLabel)
                     Spacer()
-                    Picker("结束条件", selection: $controller.endCondition) {
-                        ForEach(SessionEndCondition.allCases) { item in Text(item.title).tag(item) }
-                    }.labelsHidden().frame(width: 190)
+                    TerminalPicker("结束条件", selection: $controller.endCondition, choices: SessionEndCondition.allCases.map { TerminalChoice($0.title, $0) }).labelsHidden().frame(width: 190)
                 }.disabled(controller.isActive || controller.isStarting)
                 conditionFields.disabled(controller.isActive || controller.isStarting)
                 HStack {
                     Text("开始时使用").font(WorkType.controlLabel)
                     Spacer()
-                    Picker("会话工作模式", selection: $controller.defaultMode) {
-                        Text("桌面工作").tag(WorkMode.desk)
-                        Text("合盖后台工作").tag(WorkMode.background)
-                    }.labelsHidden().frame(width: 190)
+                    TerminalPicker("会话工作模式", selection: $controller.defaultMode, choices: [TerminalChoice("桌面工作", .desk), TerminalChoice("合盖后台工作", .background)]).labelsHidden().frame(width: 190)
                 }.disabled(controller.isActive || controller.isStarting)
                 Text(controller.status).font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                     .accessibilityLabel("会话状态：" + controller.status)
@@ -46,8 +41,8 @@ struct SessionsView: View {
                     HStack {
                         Text("结束：" + deadline.formatted(date: .abbreviated, time: .shortened)).font(WorkType.caption).foregroundStyle(WorkStyle.muted)
                         Spacer()
-                        TextField("分钟", value: $extensionMinutes, format: .number).textFieldStyle(.roundedBorder).frame(width: 65).accessibilityLabel("延长会话的分钟数")
-                        Button("延长会话") { controller.extend(minutes: extensionMinutes) }.buttonStyle(WorkButtonStyle())
+                        TextField("分钟", value: $extensionMinutes, format: .number).textFieldStyle(TerminalTextFieldStyle()).frame(width: 65).accessibilityLabel("延长会话的分钟数")
+                        Button("延长会话") { controller.extend(minutes: extensionMinutes) }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                     }
                 }
                 HStack {
@@ -57,7 +52,7 @@ struct SessionsView: View {
                             if controller.isActive { await controller.end() }
                             else { await controller.start() }
                         }
-                    }.buttonStyle(WorkButtonStyle(prominent: true)).disabled(controller.isStarting)
+                    }.buttonStyle(WorkButtonStyle(prominent: true)).workKeyboardFocus(radius: 0).disabled(controller.isStarting)
                 }
             }
             WorkCard(title: "会话效果", subtitle: "手动、会话和自动触发的工作模式均适用；恢复正常休眠后停止。") {
@@ -70,11 +65,11 @@ struct SessionsView: View {
                     HStack {
                         Text("屏保例外：" + controller.screenSaverExceptionName(identifier)).font(WorkType.caption)
                         Spacer()
-                        Button { controller.screenSaverExceptionBundleIDs.removeAll { $0 == identifier } } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.plain).accessibilityLabel("移除屏保例外 " + controller.screenSaverExceptionName(identifier))
+                        Button { controller.screenSaverExceptionBundleIDs.removeAll { $0 == identifier } } label: { TerminalIcon(name: "minus.circle") }
+                            .buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).accessibilityLabel("移除屏保例外 " + controller.screenSaverExceptionName(identifier))
                     }
                 }
-                Button("添加屏保例外应用") { controller.chooseScreenSaverException() }.buttonStyle(WorkButtonStyle())
+                Button("添加屏保例外应用") { controller.chooseScreenSaverException() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                 WorkNote(text: "例外应用运行时暂停自动启动屏保；工作中的开关修改仅影响本次，正常模式下保存为默认。")
                 Rectangle().fill(WorkStyle.line).frame(height: 1)
                 WorkToggle(title: "轻微移动鼠标", detail: "按所设间隔移动 1 像素并移回，仅在已解锁时。保留系统闲置计时；显示器和屏保由各自开关控制。", isOn: $controller.moveCursor)
@@ -89,7 +84,7 @@ struct SessionsView: View {
                     HStack {
                         effectText(controller.effectReport.cursor)
                         Spacer()
-                        Button("授权辅助功能") { controller.requestCursorAccess() }.buttonStyle(WorkButtonStyle())
+                        Button("授权辅助功能") { controller.requestCursorAccess() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
                     }
                 }
             }
@@ -103,11 +98,11 @@ struct SessionsView: View {
                             if let message = controller.effectReport.drives[directory.path] { effectText(message) }
                         }
                         Spacer()
-                        Button { controller.driveDirectories.removeAll { $0 == directory } } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.plain).accessibilityLabel("移除目录 " + directory.lastPathComponent)
+                        Button { controller.driveDirectories.removeAll { $0 == directory } } label: { TerminalIcon(name: "minus.circle") }
+                            .buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).accessibilityLabel("移除目录 " + directory.lastPathComponent)
                     }
                 }
-                Button("添加磁盘目录") { controller.chooseDriveDirectory() }.buttonStyle(WorkButtonStyle())
+                Button("添加磁盘目录") { controller.chooseDriveDirectory() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             }
         }
     }
@@ -120,7 +115,7 @@ struct SessionsView: View {
                 Text("持续时长").font(WorkType.controlLabel)
                 Spacer()
                 TextField("分钟", value: $controller.durationMinutes, format: .number).frame(width: 75)
-                    .textFieldStyle(.roundedBorder).accessibilityLabel("会话时长，分钟")
+                    .textFieldStyle(TerminalTextFieldStyle()).accessibilityLabel("会话时长，分钟")
                 Text("分钟").font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
             }
         case .untilDate:
@@ -130,23 +125,19 @@ struct SessionsView: View {
                 Text(controller.applicationURL?.deletingPathExtension().lastPathComponent ?? "未选择应用")
                     .font(.system(size: 12)).foregroundStyle(WorkStyle.muted)
                 Spacer()
-                Button("选择正在运行的应用") { controller.chooseApplication() }.buttonStyle(WorkButtonStyle())
+                Button("选择正在运行的应用") { controller.chooseApplication() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             }
             WorkNote(text: "核验应用包身份及实际运行进程；全部匹配实例退出后结束。无法核验时继续等待。")
         case .process:
             if !controller.processChoices.isEmpty {
-                TextField("搜索进程名称、路径或 PID", text: $processSearch).textFieldStyle(.roundedBorder).font(WorkType.body)
+                TextField("搜索进程名称、路径或 PID", text: $processSearch).textFieldStyle(TerminalTextFieldStyle()).font(WorkType.body)
             }
             HStack {
-                Menu {
-                    ForEach(displayedProcesses) { process in
-                        Button("\(process.name) · PID \(process.identity.pid)") { controller.selectedProcess = process }
-                    }
-                } label: {
-                    Text(controller.selectedProcess.map { "\($0.name) · PID \($0.identity.pid)" } ?? "选择进程")
-                }.disabled(displayedProcesses.isEmpty)
+                TerminalActionMenu(title: controller.selectedProcess.map { "\($0.name) · PID \($0.identity.pid)" } ?? "选择进程", titles: displayedProcesses.map { "\($0.name) · PID \($0.identity.pid)" }) { index in
+                    if displayedProcesses.indices.contains(index) { controller.selectedProcess = displayedProcesses[index] }
+                }.frame(width: 260).disabled(displayedProcesses.isEmpty)
                 Spacer()
-                Button("刷新进程") { controller.refreshProcesses() }.buttonStyle(WorkButtonStyle())
+                Button("刷新进程") { controller.refreshProcesses() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             }
             if let process = controller.selectedProcess { effectText(process.executablePath) }
             WorkNote(text: controller.processDiscoveryStatus + "。仅监测所选的这次运行；同名进程重启不会延续会话。")
@@ -154,7 +145,7 @@ struct SessionsView: View {
             HStack {
                 Text(controller.downloadURL?.lastPathComponent ?? "未选择文件").font(.system(size: 12)).foregroundStyle(WorkStyle.muted).lineLimit(2)
                 Spacer()
-                Button("选择下载文件") { controller.chooseDownload() }.buttonStyle(WorkButtonStyle())
+                Button("选择下载文件") { controller.chooseDownload() }.buttonStyle(WorkButtonStyle()).workKeyboardFocus(radius: 0)
             }
             if let percent = controller.downloadProgressPercent {
                 ProgressView(value: percent, total: 100)
@@ -168,7 +159,7 @@ struct SessionsView: View {
         HStack {
             Text(title).font(WorkType.controlLabel)
             Spacer()
-            TextField("秒", value: value, format: .number).textFieldStyle(.roundedBorder).frame(width: 75).accessibilityLabel(title + "，秒")
+            TextField("秒", value: value, format: .number).textFieldStyle(TerminalTextFieldStyle()).frame(width: 75).accessibilityLabel(title + "，秒")
             Text("秒").font(WorkType.caption).foregroundStyle(WorkStyle.muted)
         }
     }

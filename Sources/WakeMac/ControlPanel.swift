@@ -41,10 +41,9 @@ struct ControlPanel: View {
                 Spacer()
                 if model.busy { ProgressView().controlSize(.small) }
                 Button { model.openPreferences?() } label: {
-                    Image(systemName: "slider.horizontal.3").font(.system(size: 14))
+                    TerminalIcon(name: "slider.horizontal.3").font(.system(size: 14))
                         .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(.plain).foregroundStyle(WorkStyle.muted)
-                    .workKeyboardFocus(radius: 8)
+                }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).foregroundStyle(WorkStyle.muted)
                     .accessibilityLabel("打开主窗口").help("工作模式与设置")
             }.padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 22)
 
@@ -56,7 +55,7 @@ struct ControlPanel: View {
                     Text(model.headline).font(.system(size: 11, weight: .medium))
                     Spacer()
                     if let battery = model.battery {
-                        Image(systemName: battery.onBattery ? "battery.75percent" : "bolt.fill")
+                        TerminalIcon(name: battery.onBattery ? "battery.75percent" : "bolt.fill")
                         Text("\(battery.percent)%").monospacedDigit()
                     }
                 }.font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
@@ -64,7 +63,7 @@ struct ControlPanel: View {
 
             PowerControls(model: model, compact: true)
                 .padding(16)
-                .background(WorkStyle.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
+                .background(WorkStyle.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 0))
                 .padding(.horizontal, 16).padding(.bottom, 16)
 
             VStack(spacing: 4) {
@@ -77,12 +76,12 @@ struct ControlPanel: View {
 
             if let countdown = model.countdownText {
                 HStack(spacing: 8) {
-                    Image(systemName: "timer")
+                    TerminalIcon(name: "timer")
                     Text(countdown).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    Button("取消", action: model.cancelVisibleCountdown).buttonStyle(.plain)
+                    Button("取消", action: model.cancelVisibleCountdown).buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0)
                 }.font(.system(size: 11, weight: .medium)).foregroundStyle(WorkStyle.blue)
-                    .padding(12).background(WorkStyle.selection, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(12).background(WorkStyle.selection, in: RoundedRectangle(cornerRadius: 0))
                     .padding(.horizontal, 16).padding(.top, 12)
             }
             if model.pending != nil || model.error {
@@ -90,13 +89,13 @@ struct ControlPanel: View {
                     Text(model.message).font(.system(size: 11)).foregroundStyle(model.error ? Color.red : WorkStyle.muted)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     HStack {
-                        if model.pending != nil { Button("打开系统设置", action: model.openLockSettings) }
-                        Button("重新检查") { model.error = false; Task { await model.refresh() } }
-                    }.buttonStyle(WorkButtonStyle())
+                        if model.pending != nil { Button("打开系统设置", action: model.openLockSettings).workKeyboardFocus(radius: 0) }
+                        Button("重新检查") { model.error = false; Task { await model.refresh() } }.workKeyboardFocus(radius: 0)
+                    }.buttonStyle(WorkButtonStyle()).focusEffectDisabled()
                 }.padding(16)
             }
             HStack(spacing: 6) {
-                Image(systemName: protected ? "lock.shield" : "lock.trianglebadge.exclamationmark")
+                TerminalIcon(name: protected ? "lock.shield" : "lock.trianglebadge.exclamationmark")
                 Text(model.requiresImmediateLock ? (protected ? "即时密码保护已开启" : "等待核验密码保护") : "跟随系统锁屏设置")
                 Spacer()
                 Text(model.display.sessionLocked == true ? "当前已锁定" : "").foregroundStyle(WorkStyle.muted)
@@ -105,17 +104,17 @@ struct ControlPanel: View {
 
             Rectangle().fill(WorkStyle.line.opacity(0.6)).frame(height: 1).padding(.horizontal, 20)
             HStack {
-                Label(displaySummary, systemImage: "laptopcomputer").font(.system(size: 10)).foregroundStyle(WorkStyle.muted)
+                TerminalLabel(displaySummary, systemImage: "laptopcomputer").font(.system(size: 10)).foregroundStyle(WorkStyle.muted)
                 Spacer()
                 Button { Task { await model.choose(.normal, sleep: true) } } label: {
-                    Label("立即休眠", systemImage: "power").font(.system(size: 11, weight: .medium))
-                }.buttonStyle(.plain).disabled(model.busy)
+                    TerminalLabel("立即休眠", systemImage: "power").font(.system(size: 11, weight: .medium))
+                }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(model.busy)
             }.padding(.horizontal, 20).padding(.vertical, 14)
         }
         .frame(width: 344).fixedSize(horizontal: false, vertical: true)
         .foregroundStyle(WorkStyle.ink)
         .background { if standalone { WorkWindowMaterial() } }
-        .tint(WorkStyle.blue)
+        .tint(WorkStyle.blue).preferredColorScheme(.light)
     }
     private func modeRow(_ mode: WorkMode) -> some View {
         let selected = model.active == mode && model.pending == nil && !model.error
@@ -124,24 +123,23 @@ struct ControlPanel: View {
             Task { await model.choose(mode) }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: rowIcon(mode)).font(.system(size: 17, weight: .regular))
+                TerminalIcon(name: rowIcon(mode)).font(.system(size: 17, weight: .regular))
                     .frame(width: 32, height: 32)
                     .foregroundStyle(selected ? WorkStyle.blue : WorkStyle.muted)
-                    .background(selected ? WorkStyle.blue.opacity(0.13) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                    .background(selected ? WorkStyle.blue.opacity(0.13) : Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 0))
                 VStack(alignment: .leading, spacing: 5) {
                     Text(mode.title).font(.system(size: 13, weight: .semibold))
                     Text(subtitle(mode)).font(.system(size: 11)).foregroundStyle(WorkStyle.muted)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                TerminalIcon(name: selected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 16)).foregroundStyle(selected ? WorkStyle.blue : WorkStyle.line)
             }.foregroundStyle(WorkStyle.ink)
                 .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(selected ? WorkStyle.blue.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(selected ? WorkStyle.blue.opacity(0.14) : Color.clear))
-                .contentShape(RoundedRectangle(cornerRadius: 16))
-        }.buttonStyle(.plain).disabled(model.busy)
-            .workKeyboardFocus(radius: 16)
+                .background(selected ? WorkStyle.blue.opacity(0.10) : Color.clear, in: RoundedRectangle(cornerRadius: 0))
+                .overlay(RoundedRectangle(cornerRadius: 0).strokeBorder(Color.clear))
+                .contentShape(RoundedRectangle(cornerRadius: 0))
+        }.buttonStyle(TerminalPlainButtonStyle()).workKeyboardFocus(radius: 0).disabled(model.busy)
             .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
     private func rowIcon(_ mode: WorkMode) -> String {

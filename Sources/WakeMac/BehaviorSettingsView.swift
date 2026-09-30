@@ -18,7 +18,7 @@ struct BehaviorSettingsView: View {
                 if behavior.lidToneEnabled {
                     WorkToggle(title: "重复提示音", isOn: $behavior.lidToneRepeat)
                     if behavior.lidToneRepeat { numberRow("声音间隔", value: $behavior.lidToneSeconds, range: 5...86400, suffix: "秒") }
-                    HStack { Text("提示音音量").font(WorkType.controlLabel); Spacer(); Slider(value: $behavior.lidToneVolume, in: 0...1).frame(width: 150) }
+                    HStack { Text("提示音音量").font(WorkType.controlLabel); Spacer(); TerminalSlider("提示音音量", value: $behavior.lidToneVolume, in: 0...1).frame(width: 150) }
                     WorkNote(text: "使用自定义通知声音或系统 Glass；只调整本应用声音，不改变系统音量。")
                 }
             }
@@ -27,7 +27,7 @@ struct BehaviorSettingsView: View {
                 HStack {
                     Text("工作 \(Int(behavior.awakeSeconds / 60)) 分钟 · 合盖 \(Int(behavior.lidSeconds / 60)) 分钟 · \(behavior.activations) 次启动")
                         .font(WorkType.body).monospacedDigit().foregroundStyle(WorkStyle.muted)
-                    Spacer(); Button("清零统计") { resetPrompt = true }
+                    Spacer(); Button("清零统计") { resetPrompt = true }.workKeyboardFocus(radius: 0)
                 }
             }
         }.confirmationDialog("清零本机工作统计？", isPresented: $resetPrompt) {
@@ -36,6 +36,6 @@ struct BehaviorSettingsView: View {
         }
     }
     private func numberRow(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, suffix: String) -> some View {
-        HStack { Text(title).font(WorkType.controlLabel); Spacer(); Text(value.wrappedValue.formatted() + " " + suffix).font(WorkType.body).monospacedDigit(); Stepper(title, value: value, in: range).labelsHidden() }
+        HStack { Text(title).font(WorkType.controlLabel); Spacer(); Text(value.wrappedValue.formatted() + " " + suffix).font(WorkType.body).monospacedDigit(); TerminalStepper(title, value: value, in: range).labelsHidden() }
     }
 }

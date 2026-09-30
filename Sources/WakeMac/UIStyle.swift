@@ -2,23 +2,23 @@ import SwiftUI
 import AppKit
 
 enum WorkStyle {
-    static let cardRadius: CGFloat = 18
-    static let inputRadius: CGFloat = 8
-    static let blue = Color(light: 0x2563EB, dark: 0x79A9FF)
-    static let canvas = Color(light: 0xF7F9FC, dark: 0x171B23)
-    static let surface = Color(light: 0xFFFFFF, dark: 0x202631)
-    static let sidebar = Color(light: 0xEDF2F9, dark: 0x131720)
-    static let selection = Color(light: 0xEAF1FF, dark: 0x253955)
-    static let line = Color(light: 0xE3E8F0, dark: 0x333D4D)
-    static let ink = Color(light: 0x19283D, dark: 0xECF1FA)
-    static let muted = Color(light: 0x65748A, dark: 0xA2AFC2)
+    static let cardRadius: CGFloat = 0
+    static let inputRadius: CGFloat = 0
+    static let blue = TerminalStyle.accent
+    static let canvas = TerminalStyle.paper
+    static let surface = Color.white
+    static let sidebar = TerminalStyle.silver
+    static let selection = TerminalStyle.selection
+    static let line = TerminalStyle.line.opacity(0.55)
+    static let ink = TerminalStyle.ink
+    static let muted = TerminalStyle.muted
 }
 
 /// Shared semantic hierarchy for the main window, sheets, and compact panel.
 enum WorkType {
-    static let pageTitle = Font.system(size: 28, weight: .semibold, design: .rounded)
-    static let sectionTitle = Font.system(size: 17, weight: .semibold)
-    static let dialogTitle = Font.system(size: 20, weight: .semibold)
+    static let pageTitle = Font.system(size: 28, weight: .semibold, design: .default)
+    static let sectionTitle = TerminalStyle.display(17)
+    static let dialogTitle = TerminalStyle.display(22)
     static let controlLabel = Font.system(size: 13, weight: .regular)
     static let body = Font.system(size: 12, weight: .regular)
     static let caption = Font.system(size: 11, weight: .regular)
@@ -26,40 +26,8 @@ enum WorkType {
     static let compactCaption = Font.system(size: 10, weight: .regular)
 }
 
-private extension Color {
-    init(light: UInt32, dark: UInt32) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
-            let hex = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-            return NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255,
-                           green: CGFloat((hex >> 8) & 255) / 255,
-                           blue: CGFloat(hex & 255) / 255, alpha: 1)
-        })
-    }
-}
-
-struct WorkButtonStyle: ButtonStyle {
-    var prominent = false
-    @Environment(\.isEnabled) private var isEnabled
-
-    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
-        let label = configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 15).padding(.vertical, 8)
-            .foregroundStyle(prominent ? Color.white : WorkStyle.ink)
-            .opacity(isEnabled ? 1 : 0.45)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-        if #available(macOS 26.0, *) {
-            if prominent {
-                label.glassEffect(.regular.tint(WorkStyle.blue).interactive(isEnabled), in: Capsule())
-            } else {
-                label.glassEffect(.regular.interactive(isEnabled), in: Capsule())
-            }
-        } else {
-            label.background(prominent ? WorkStyle.blue : WorkStyle.surface, in: Capsule())
-                .overlay(Capsule().strokeBorder(WorkStyle.line))
-        }
-    }
-}
+// Use the style itself so SwiftUI installs its enabled / reduced-motion environment.
+typealias WorkButtonStyle = TerminalButtonStyle
 
 /// Native macOS backdrop sampling; the window stays transparent so the
 /// material responds to the desktop rather than an opaque painted surface.
@@ -95,10 +63,9 @@ struct WorkGlassGroup<Content: View>: View {
 }
 
 extension View {
-    @ViewBuilder func workGlassControl() -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 14))
-        } else { self.background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14)) }
+    func workGlassControl() -> some View {
+        self.padding(1).background(WorkStyle.surface)
+            .overlay(TerminalFrame(cut: 4).stroke(TerminalStyle.line))
     }
 }
 
@@ -115,8 +82,10 @@ struct WorkCard<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading).padding(22)
-        .background(WorkStyle.surface, in: RoundedRectangle(cornerRadius: WorkStyle.cardRadius))
-        .overlay(RoundedRectangle(cornerRadius: WorkStyle.cardRadius).strokeBorder(WorkStyle.line.opacity(0.5)))
+        .background(WorkStyle.surface)
+        .clipShape(TerminalFrame(cut: 8))
+        .overlay(TerminalFrame(cut: 8).stroke(TerminalStyle.line))
+        .overlay(alignment: .topLeading) { Rectangle().fill(TerminalStyle.amber.opacity(0.7)).frame(width: 26, height: 2).padding(.leading, 22) }
     }
 }
 
@@ -129,7 +98,7 @@ struct WorkToggle: View {
     var body: some View {
         HStack(spacing: 10) {
             if let icon {
-                Image(systemName: icon).font(.system(size: compact ? 15 : 18))
+                TerminalIcon(name: icon).font(.system(size: compact ? 15 : 18))
                     .foregroundStyle(isOn ? WorkStyle.blue : WorkStyle.muted).frame(width: 22)
             }
             VStack(alignment: .leading, spacing: 4) {
@@ -138,7 +107,7 @@ struct WorkToggle: View {
                     .fixedSize(horizontal: false, vertical: true) }
             }
             Spacer(minLength: 12)
-            Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small)
+            Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(TerminalSwitchStyle()).controlSize(.small)
                 .accessibilityLabel(title).accessibilityHint(detail ?? "")
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -149,7 +118,7 @@ struct WorkNote: View {
     var icon = "info.circle"
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon).padding(.top, 1)
+            TerminalIcon(name: icon).padding(.top, 1)
             Text(text).fixedSize(horizontal: false, vertical: true)
         }.font(WorkType.caption).foregroundStyle(WorkStyle.muted)
     }
@@ -172,10 +141,10 @@ private struct WorkKeyboardFocus: ViewModifier {
     @FocusState private var focused: Bool
     func body(content: Content) -> some View {
         content.focused($focused).focusEffectDisabled()
-            .overlay {
-                RoundedRectangle(cornerRadius: radius)
-                    .strokeBorder(WorkStyle.blue.opacity(focused ? 0.65 : 0), lineWidth: 1)
-                    .allowsHitTesting(false)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(TerminalStyle.amber)
+                    .frame(width: 16, height: 2).offset(y: 3)
+                    .opacity(focused ? 1 : 0).allowsHitTesting(false)
             }
     }
 }

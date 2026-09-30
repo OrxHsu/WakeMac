@@ -7,15 +7,15 @@ struct AdvancedView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             WorkCard(title: "菜单栏外观") {
-                HStack { Text("图标").font(WorkType.controlLabel); Spacer(); Picker("菜单栏图标", selection: $appearance.icon) { ForEach(AppearanceController.Icon.allCases) { Text($0.title).tag($0) } }.labelsHidden().frame(width: 160) }
-                HStack { Text("PNG、JPEG、TIFF 或 ICNS").font(.system(size: 11)).foregroundStyle(WorkStyle.muted); Spacer(); Button("选择图标…", action: appearance.chooseIcon) }
+                HStack { Text("图标").font(WorkType.controlLabel); Spacer(); TerminalPicker("菜单栏图标", selection: $appearance.icon, choices: AppearanceController.Icon.allCases.map { TerminalChoice($0.title, $0) }).labelsHidden().frame(width: 160) }
+                HStack { Text("PNG、JPEG、TIFF 或 ICNS").font(.system(size: 11)).foregroundStyle(WorkStyle.muted); Spacer(); Button("选择图标…", action: appearance.chooseIcon).workKeyboardFocus(radius: 0) }
                 if appearance.icon == .custom { WorkToggle(title: "图标跟随系统明暗", detail: "关闭后保留原图颜色。", isOn: $appearance.template) }
                 WorkToggle(title: "菜单栏显示结束时间", detail: "关闭时显示剩余时长。", isOn: $appearance.showEndTime)
                 WorkToggle(title: "使用 24 小时制", isOn: $appearance.twentyFourHour)
-                HStack { Text("图标两侧留白").font(WorkType.controlLabel); Spacer(); Text("\(Int(appearance.iconPadding)) pt").font(WorkType.body).monospacedDigit(); Stepper("图标两侧留白", value: $appearance.iconPadding, in: 0...12).labelsHidden() }
+                HStack { Text("图标两侧留白").font(WorkType.controlLabel); Spacer(); Text("\(Int(appearance.iconPadding)) pt").font(WorkType.body).monospacedDigit(); TerminalStepper("图标两侧留白", value: $appearance.iconPadding, in: 0...12).labelsHidden() }
             }
             WorkCard(title: "通知声音", subtitle: appearance.soundName.isEmpty ? "使用系统默认声音" : "已使用自定义通知声音") {
-                HStack { Button("选择声音…", action: appearance.chooseSound); Button("试听", action: appearance.previewSound); Spacer(); Button("恢复默认", action: appearance.resetSound) }
+                HStack { Button("选择声音…", action: appearance.chooseSound).workKeyboardFocus(radius: 0); Button("试听", action: appearance.previewSound).workKeyboardFocus(radius: 0); Spacer(); Button("恢复默认", action: appearance.resetSound).workKeyboardFocus(radius: 0) }
                 WorkNote(text: "支持短于 30 秒的 AIFF、WAV 或 CAF；通知权限仍由系统管理。")
                 WorkToggle(title: "通知时播放声音", isOn: $notifier.notificationSound)
                 WorkToggle(title: "会话开始与结束播放声音", isOn: $notifier.lifecycleSound)
